@@ -16,5 +16,10 @@
     "lint": "npm run lint --workspaces --if-present",
     "dev:api": "npm run dev -w @ezscout/api",
     "dev:web": "npm run dev -w @ezscout/web"
+  },
+  "devDependencies": {
+    "eslint": "^10.9.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "typescript-eslint": "^8.67.0"
   }
 }
