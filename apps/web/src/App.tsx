@@ -1,8 +1,11 @@
+import { sampleForm } from "./sample-form";
+import { FormView } from "./components/FormView";
+
 export default function App() {
   return (
     <main>
       <h1>EZScout</h1>
-      <p>Form renderer scaffolding.</p>
+      <FormView definition={sampleForm} />
     </main>
   );
 }

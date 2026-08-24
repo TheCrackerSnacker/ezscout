@@ -1,0 +1,54 @@
+name: ezscout-dev
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-ezscout}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ezscout}
+      POSTGRES_DB: ${POSTGRES_DB:-ezscout}
+    ports:
+      - "${HOST_PG_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ezscout} -d ${POSTGRES_DB:-ezscout}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+      target: dev
+    command: sh -c "npm run db:migrate && npx --no-install tsx watch src/server.ts"
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-ezscout}:${POSTGRES_PASSWORD:-ezscout}@postgres:5432/${POSTGRES_DB:-ezscout}
+      PORT: 3000
+    ports:
+      - "${HOST_API_PORT:-3000}:3000"
+    volumes:
+      - ./apps/api/src:/app/apps/api/src
+      - ./packages/shared/src:/app/packages/shared/src
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/web.Dockerfile
+      target: dev-web
+    environment:
+      API_PROXY: http://api:3000
+    ports:
+      - "${HOST_WEB_PORT:-5173}:5173"
+    volumes:
+      - ./apps/web/src:/app/apps/web/src
+      - ./packages/shared/src:/app/packages/shared/src
+    depends_on:
+      - api
+
+volumes:
+  pgdata:

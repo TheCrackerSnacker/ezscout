@@ -1,10 +1,10 @@
-.PHONY: install dev down logs debug-api db-shell test test-unit test-watch lint typecheck build deploy migrate undeploy
+.PHONY: install dev down logs debug-api db-shell test test-unit test-integration test-watch lint typecheck studio build deploy migrate undeploy
 
 install:
 	npm install
 
 dev:
-	docker compose up --watch
+	docker compose up --build
 
 down:
 	docker compose down
@@ -40,7 +40,13 @@ deploy:
 	docker compose -f docker-compose.prod.yml up -d --build
 
 migrate:
-	npm run db:migrate -w @ezscout/api
+	docker compose exec api npm run db:migrate
+
+test-integration:
+	npm run test:integration -w @ezscout/api
+
+studio:
+	npm run db:studio -w @ezscout/api
 
 undeploy:
 	docker compose -f docker-compose.prod.yml down
