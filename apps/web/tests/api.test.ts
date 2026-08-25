@@ -1,5 +1,6 @@
-import { ApiError, getPublishedForm, submitResponse } from "../src/api";
+import { ApiError, getPublishedForm, submitResponses } from "../src/api";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Submission } from "@ezscout/shared";
 
 const publishedForm = {
   id: "0198f7a2-7b3c-7000-8000-3b9ac95e4a01",
@@ -52,44 +53,46 @@ describe("api client", () => {
     });
   });
 
-  describe("submitResponse", () => {
-    it("posts a payload with a generated response id", async () => {
+  describe("submitResponses", () => {
+    it("posts the envelope and returns per-item results", async () => {
       fetchMock.mockResolvedValue(
-        new Response(JSON.stringify({ status: "accepted" }), { status: 200 })
+        new Response(
+          JSON.stringify({
+            results: [{ index: 0, status: "accepted" }]
+          }),
+          { status: 200 }
+        )
       );
 
-      const result = await submitResponse({
+      const submission: Submission = {
+        id: "0198f7a2-7b3c-7000-8000-3b9ac95e4a03",
         formId: publishedForm.id,
         formVersion: 2,
         answers: {}
-      });
+      };
+      const result = await submitResponses([submission]);
 
-      expect(result.status).toBe("accepted");
+      expect(result.results[0]?.status).toBe("accepted");
 
       const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
       expect(url).toBe("/api/responses");
       expect(init.method).toBe("POST");
-
-      const body = JSON.parse(String(init.body)) as {
-        id: string;
-        formId: string;
-        formVersion: number;
-      };
-      expect(body.formId).toBe(publishedForm.id);
-      expect(body.formVersion).toBe(2);
-      expect(body.id).toMatch(
-        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-      );
+      expect(JSON.parse(String(init.body))).toEqual({
+        responses: [submission]
+      });
     });
 
     it("throws an ApiError when the server responds with an error status", async () => {
       fetchMock.mockResolvedValue(new Response("", { status: 500 }));
 
-      const error = await submitResponse({
-        formId: publishedForm.id,
-        formVersion: 2,
-        answers: {}
-      }).catch((caught: unknown) => caught);
+      const error = await submitResponses([
+        {
+          id: "0198f7a2-7b3c-7000-8000-3b9ac95e4a03",
+          formId: publishedForm.id,
+          formVersion: 2,
+          answers: {}
+        }
+      ]).catch((caught: unknown) => caught);
 
       expect(error).toBeInstanceOf(ApiError);
       expect((error as ApiError).status).toBe(500);

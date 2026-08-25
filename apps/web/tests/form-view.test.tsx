@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import type { SubmissionResult } from "../src/api";
+import type { BatchResultItem } from "@ezscout/shared";
 import { FormView } from "../src/components/FormView";
 import { sampleForm } from "../src/sample-form";
 
@@ -59,7 +59,7 @@ describe("FormView", () => {
     const onValidSubmit = vi.fn(
       async (
         _answers: Record<string, unknown>
-      ): Promise<SubmissionResult> => ({ status: "accepted" })
+      ): Promise<BatchResultItem> => ({ index: 0, status: "accepted" })
     );
     render(<FormView definition={sampleForm} onValidSubmit={onValidSubmit} />);
 
@@ -74,7 +74,8 @@ describe("FormView", () => {
   });
 
   it("surfaces server-side rejection issues", async () => {
-    const onValidSubmit = vi.fn(async (): Promise<SubmissionResult> => ({
+    const onValidSubmit = vi.fn(async (): Promise<BatchResultItem> => ({
+      index: 0,
       status: "rejected",
       reason: "validation_failed",
       issues: [
@@ -117,7 +118,7 @@ describe("FormView", () => {
 
   it("confirms a duplicate response distinctly", async () => {
     const onValidSubmit = vi.fn(
-      async (): Promise<SubmissionResult> => ({ status: "duplicate" })
+      async (): Promise<BatchResultItem> => ({ index: 0, status: "duplicate" })
     );
     render(<FormView definition={sampleForm} onValidSubmit={onValidSubmit} />);
 

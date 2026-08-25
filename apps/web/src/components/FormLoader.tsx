@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import type { PublicForm } from "@ezscout/shared";
-import { ApiError, getPublishedForm, submitResponse } from "../api";
+import type { PublicForm, Submission } from "@ezscout/shared";
+import { ApiError, getPublishedForm, submitResponses } from "../api";
 import { FormView } from "./FormView";
 
 type LoaderState =
@@ -51,13 +51,16 @@ export function FormLoader({ formId }: { formId: string }) {
   return (
     <FormView
       definition={state.form}
-      onValidSubmit={(answers) =>
-        submitResponse({
+      onValidSubmit={async (answers) => {
+        const submission: Submission = {
+          id: crypto.randomUUID(),
           formId,
           formVersion: state.form.version,
           answers
-        })
-      }
+        };
+        const { results } = await submitResponses([submission]);
+        return results[0];
+      }}
     />
   );
 }

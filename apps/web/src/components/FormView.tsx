@@ -1,13 +1,16 @@
 import { useState } from "react";
-import { validateAnswers, type FormDefinition } from "@ezscout/shared";
-import type { SubmissionResult } from "../api";
+import {
+  validateAnswers,
+  type BatchResultItem,
+  type FormDefinition
+} from "@ezscout/shared";
 import { QuestionRenderer } from "../questions/registry";
 
 export interface FormViewProps {
   definition: FormDefinition;
   onValidSubmit?: (
     answers: Record<string, unknown>
-  ) => Promise<SubmissionResult | void>;
+  ) => Promise<BatchResultItem | undefined | void>;
 }
 
 interface IssueEntry {

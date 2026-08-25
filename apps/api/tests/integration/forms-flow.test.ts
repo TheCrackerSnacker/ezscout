@@ -113,29 +113,39 @@ suite("forms + responses integration", () => {
     expect(second.json().version).toBe(2);
   });
 
-  it("rejects submissions pinned to an unknown form version", async () => {
+  it("rejects batch items pinned to an unknown form version", async () => {
     const created = await app.inject({
       method: "POST",
       url: "/api/forms",
       payload: sampleDefinition()
     });
     const formId = created.json().id;
+    const submission = {
+      id: randomUUID(),
+      formId,
+      formVersion: 42,
+      answers: { [QUESTION_ID]: "Yes" }
+    };
 
     const result = await app.inject({
       method: "POST",
       url: "/api/responses",
-      payload: {
-        id: randomUUID(),
-        formId,
-        formVersion: 42,
-        answers: { [QUESTION_ID]: "Yes" }
-      }
+      payload: { responses: [submission] }
     });
     expect(result.statusCode).toBe(200);
-    expect(result.json()).toEqual({ status: "rejected", reason: "unknown_form_version" });
+    expect(result.json()).toEqual({
+      results: [
+        {
+          index: 0,
+          id: submission.id,
+          status: "rejected",
+          reason: "unknown_form_version"
+        }
+      ]
+    });
   });
 
-  it("accepts a valid response exactly once", async () => {
+  it("accepts each valid response in a batch exactly once", async () => {
     const created = await app.inject({
       method: "POST",
       url: "/api/forms",
@@ -144,22 +154,46 @@ suite("forms + responses integration", () => {
     const formId = created.json().id;
     await app.inject({ method: "POST", url: `/api/forms/${formId}/publish`, payload: {} });
 
-    const submission = {
+    const first = {
       id: randomUUID(),
       formId,
       formVersion: 1,
       answers: { [QUESTION_ID]: "Yes" }
     };
+    const second = { ...first, id: randomUUID() };
+    const envelope = { responses: [first, second] };
 
-    const first = await app.inject({ method: "POST", url: "/api/responses", payload: submission });
-    expect(first.json()).toEqual({ status: "accepted" });
+    const initial = await app.inject({
+      method: "POST",
+      url: "/api/responses",
+      payload: envelope
+    });
+    expect(initial.statusCode).toBe(200);
+    expect(initial.json()).toEqual({
+      results: [
+        { index: 0, id: first.id, status: "accepted" },
+        { index: 1, id: second.id, status: "accepted" }
+      ]
+    });
 
-    const retry = await app.inject({ method: "POST", url: "/api/responses", payload: submission });
-    expect(retry.json()).toEqual({ status: "duplicate" });
+    const replay = await app.inject({
+      method: "POST",
+      url: "/api/responses",
+      payload: envelope
+    });
+    expect(replay.json()).toEqual({
+      results: [
+        { index: 0, id: first.id, status: "duplicate" },
+        { index: 1, id: second.id, status: "duplicate" }
+      ]
+    });
 
     const rows = await db.select().from(responses).where(eq(responses.formId, formId));
-    expect(rows).toHaveLength(1);
-    expect(rows[0]!.answers).toEqual(submission.answers);
+    expect(rows).toHaveLength(2);
+    expect(rows.map((row) => row.answers)).toEqual([
+      first.answers,
+      second.answers
+    ]);
   });
 
   it("rejects off-menu answers with issue details", async () => {
@@ -175,25 +209,122 @@ suite("forms + responses integration", () => {
       method: "POST",
       url: "/api/responses",
       payload: {
-        id: randomUUID(),
-        formId,
-        formVersion: 1,
-        answers: { [QUESTION_ID]: "Maybe" }
+        responses: [
+          {
+            id: randomUUID(),
+            formId,
+            formVersion: 1,
+            answers: { [QUESTION_ID]: "Maybe" }
+          }
+        ]
       }
     });
+    expect(result.statusCode).toBe(200);
     const body = result.json();
-    expect(body.status).toBe("rejected");
-    expect(body.reason).toBe("validation_failed");
-    expect(body.issues[0].questionId).toBe(QUESTION_ID);
+    expect(body.results).toHaveLength(1);
+    expect(body.results[0].status).toBe("rejected");
+    expect(body.results[0].reason).toBe("validation_failed");
+    expect(body.results[0].issues[0].questionId).toBe(QUESTION_ID);
   });
 
-  it("rejects malformed submission payloads with 400", async () => {
+  it("rejects malformed submission envelopes with 400", async () => {
     const result = await app.inject({
       method: "POST",
       url: "/api/responses",
       payload: { nonsense: true }
     });
     expect(result.statusCode).toBe(400);
-    expect(result.json().error).toBe("Invalid submission");
+    expect(result.json().error).toBe("Invalid submission batch");
+  });
+
+  it("keeps structurally-bad items from failing the whole batch", async () => {
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/forms",
+      payload: sampleDefinition()
+    });
+    const formId = created.json().id;
+    await app.inject({ method: "POST", url: `/api/forms/${formId}/publish`, payload: {} });
+
+    const good = {
+      id: randomUUID(),
+      formId,
+      formVersion: 1,
+      answers: { [QUESTION_ID]: "Yes" }
+    };
+    const offMenu = { ...good, id: randomUUID(), answers: { [QUESTION_ID]: "Maybe" } };
+    const unknownVersion = { ...good, id: randomUUID(), formVersion: 42 };
+    const garbage = { nonsense: true };
+
+    const result = await app.inject({
+      method: "POST",
+      url: "/api/responses",
+      payload: { responses: [good, offMenu, unknownVersion, garbage] }
+    });
+    expect(result.statusCode).toBe(200);
+
+    const results = result.json().results;
+    expect(results.map((entry: { status: string }) => entry.status)).toEqual([
+      "accepted",
+      "rejected",
+      "rejected",
+      "rejected"
+    ]);
+    expect(results[1].reason).toBe("validation_failed");
+    expect(results[2].reason).toBe("unknown_form_version");
+    expect(results[3].reason).toBe("invalid_payload");
+    expect(results[3].id).toBeUndefined();
+
+    const rows = await db.select().from(responses).where(eq(responses.formId, formId));
+    expect(rows).toHaveLength(1);
+  });
+
+  it("resolves duplicate ids inside one batch", async () => {
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/forms",
+      payload: sampleDefinition()
+    });
+    const formId = created.json().id;
+    await app.inject({ method: "POST", url: `/api/forms/${formId}/publish`, payload: {} });
+
+    const submission = {
+      id: randomUUID(),
+      formId,
+      formVersion: 1,
+      answers: { [QUESTION_ID]: "No" }
+    };
+
+    const result = await app.inject({
+      method: "POST",
+      url: "/api/responses",
+      payload: { responses: [submission, submission] }
+    });
+    expect(result.statusCode).toBe(200);
+    expect(result.json().results.map((entry: { status: string }) => entry.status)).toEqual([
+      "accepted",
+      "duplicate"
+    ]);
+
+    const rows = await db.select().from(responses).where(eq(responses.formId, formId));
+    expect(rows).toHaveLength(1);
+  });
+
+  it("enforces envelope limits with 400", async () => {
+    const cases = [
+      {},
+      { responses: [] },
+      { responses: Array.from({ length: 101 }, () => ({})) }
+    ];
+
+    for (const payload of cases) {
+      const result = await app.inject({
+        method: "POST",
+        url: "/api/responses",
+        payload
+      });
+      expect(result.statusCode).toBe(400);
+      expect(result.json().error).toBe("Invalid submission batch");
+    }
   });
 });
