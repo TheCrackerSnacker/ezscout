@@ -70,7 +70,8 @@ export async function submitResponses(
       results: submissions.map((s, i) => ({
         index: i,
         id: s.id,
-        status: "accepted" as const
+        status: "accepted" as const,
+        queued: true
       })),
       queued: true
     };

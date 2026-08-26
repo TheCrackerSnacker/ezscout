@@ -1,4 +1,4 @@
-.PHONY: install dev down logs debug-api db-shell test test-unit test-integration test-watch lint typecheck studio build deploy migrate undeploy
+.PHONY: install dev down logs debug-api db-shell test test-unit test-integration test-e2e test-watch lint typecheck studio build deploy migrate undeploy
 
 install:
 	npm install
@@ -44,6 +44,13 @@ migrate:
 
 test-integration:
 	npm run test:integration -w @ezscout/api
+
+test-e2e: ## Run e2e tests against test stack
+	docker compose -f docker-compose.test.yml up -d --build
+	@echo "Waiting for stack..."
+	@sleep 15
+	npm run test:e2e
+	docker compose -f docker-compose.test.yml down
 
 studio:
 	npm run db:studio -w @ezscout/api

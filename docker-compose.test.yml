@@ -1,0 +1,38 @@
+name: ezscout-test
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ezscout
+      POSTGRES_PASSWORD: ezscout
+      POSTGRES_DB: ezscout_test
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ezscout -d ezscout_test"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+      target: prod
+    environment:
+      DATABASE_URL: postgres://ezscout:ezscout@postgres:5432/ezscout_test
+      ADMIN_PASSWORD: test-password
+      SESSION_KEY: test-session-key-e2e
+      PORT: 3000
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/web.Dockerfile
+      target: prod
+    ports:
+      - "8081:80"
+    depends_on:
+      - api
