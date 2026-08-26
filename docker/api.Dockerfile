@@ -1,4 +1,5 @@
-FROM node:24-alpine AS base
+# Debian-based: sodium-native (@fastify/secure-session) has no musl prebuilds.
+FROM node:24-slim AS base
 WORKDIR /app
 
 FROM base AS deps

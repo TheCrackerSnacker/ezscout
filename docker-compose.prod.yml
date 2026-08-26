@@ -23,6 +23,8 @@ services:
       target: prod
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-ezscout}:${POSTGRES_PASSWORD:-ezscout}@postgres:5432/${POSTGRES_DB:-ezscout}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      SESSION_KEY: ${SESSION_KEY:-}
       PORT: 3000
     depends_on:
       postgres:

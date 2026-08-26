@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { PublicForm, Submission } from "@ezscout/shared";
 import { ApiError, getPublishedForm, submitResponses } from "../api";
+import { Link } from "../router";
 import { FormView } from "./FormView";
 
 type LoaderState =
@@ -43,7 +44,7 @@ export function FormLoader({ formId }: { formId: string }) {
     return (
       <div>
         <p role="alert">{state.message}</p>
-        <a href="#/">Back to home</a>
+        <Link to="/">Back to home</Link>
       </div>
     );
   }

@@ -25,6 +25,8 @@ services:
     command: sh -c "npm run db:migrate && npx --no-install tsx watch src/server.ts"
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-ezscout}:${POSTGRES_PASSWORD:-ezscout}@postgres:5432/${POSTGRES_DB:-ezscout}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin-dev-password}
+      SESSION_KEY: ${SESSION_KEY:-dev-session-key-please-change-me-32+}
       PORT: 3000
     ports:
       - "${HOST_API_PORT:-3000}:3000"

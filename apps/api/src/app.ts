@@ -1,5 +1,12 @@
-import Fastify, { type FastifyInstance } from "fastify";
-import { and, eq, or, type SQL } from "drizzle-orm";
+import Fastify, {
+  type FastifyInstance,
+  type FastifyReply,
+  type FastifyRequest
+} from "fastify";
+import secureSession from "@fastify/secure-session";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { and, desc, eq, or, type SQL } from "drizzle-orm";
+import { z } from "zod";
 import {
   FormDefinitionSchema,
   SubmissionBatchEnvelopeSchema,
@@ -10,6 +17,12 @@ import {
 } from "@ezscout/shared";
 import { createDb, type Db } from "./db/client";
 import { forms, formVersions, responses } from "./db/schema";
+
+declare module "@fastify/secure-session" {
+  interface SessionData {
+    role?: "admin";
+  }
+}
 
 interface QueuedItem {
   index: number;
@@ -143,6 +156,8 @@ async function processSubmissions(
 
 export interface BuildAppOptions {
   db?: Db;
+  adminPassword?: string;
+  sessionKey?: string;
 }
 
 function defaultDb(): Db | null {
@@ -154,6 +169,59 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   const app = Fastify({ logger: false });
   const db = options.db ?? defaultDb();
 
+  const adminPassword = options.adminPassword ?? process.env.ADMIN_PASSWORD;
+  // A random fallback keeps the session plugin functional when unconfigured;
+  // with no admin password nobody can ever mint a valid session, so this stays
+  // fail-closed. The raw key is hashed to the exact 32 bytes the plugin requires.
+  const rawSessionKey =
+    options.sessionKey ?? process.env.SESSION_KEY ?? randomBytes(32).toString("hex");
+  const sessionKey = createHash("sha256").update(rawSessionKey).digest();
+
+  app.register(secureSession, {
+    key: sessionKey,
+    cookie: {
+      path: "/",
+      maxAge: 60 * 60 * 24 * 7,
+      secure: false
+    }
+  });
+
+  const requireAdmin = async (request: FastifyRequest, reply: FastifyReply) => {
+    if (!adminPassword) {
+      return reply.status(503).send({ error: "Admin not configured" });
+    }
+    if (request.session.get("role") !== "admin") {
+      return reply.status(401).send({ error: "Admin authentication required" });
+    }
+  };
+
+  app.post("/api/admin/login", async (request, reply) => {
+    if (!adminPassword) {
+      return reply.status(503).send({ error: "Admin not configured" });
+    }
+    const parsed = z.object({ password: z.string() }).safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: "Invalid login payload" });
+    }
+    const given = createHash("sha256").update(parsed.data.password).digest();
+    const expected = createHash("sha256").update(adminPassword).digest();
+    if (!timingSafeEqual(given, expected)) {
+      return reply.status(401).send({ error: "Invalid credentials" });
+    }
+    request.session.set("role", "admin");
+    return { ok: true };
+  });
+
+  app.post("/api/admin/logout", async (request) => {
+    request.session.delete();
+    return { ok: true };
+  });
+
+  app.get("/api/admin/session", async (request) => ({
+    authenticated:
+      Boolean(adminPassword) && request.session.get("role") === "admin"
+  }));
+
   const requireDb = (reply: { status: (code: number) => { send: (body: unknown) => unknown } }) => {
     if (db) return db;
     reply.status(503).send({ error: "Database not configured" });
@@ -162,7 +230,23 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
 
   app.get("/api/health", async () => ({ status: "ok" }));
 
-  app.post("/api/forms", async (request, reply) => {
+  app.get("/api/admin/forms", { preHandler: requireAdmin }, async (_request, reply) => {
+    const handle = requireDb(reply);
+    if (!handle) return;
+
+    const rows = await handle
+      .select({
+        id: forms.id,
+        title: forms.title,
+        publishedVersion: forms.publishedVersion,
+        updatedAt: forms.updatedAt
+      })
+      .from(forms)
+      .orderBy(desc(forms.updatedAt));
+    return { forms: rows };
+  });
+
+  app.post("/api/forms", { preHandler: requireAdmin }, async (request, reply) => {
     const handle = requireDb(reply);
     if (!handle) return;
 
@@ -182,7 +266,10 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     return reply.status(201).send({ id: row!.id });
   });
 
-  app.post("/api/forms/:id/publish", async (request, reply) => {
+  app.post(
+    "/api/forms/:id/publish",
+    { preHandler: requireAdmin },
+    async (request, reply) => {
     const handle = requireDb(reply);
     if (!handle) return;
 
@@ -214,6 +301,39 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
 
     return { id: form.id, version: nextVersion };
   });
+
+  app.put(
+    "/api/forms/:id/definition",
+    { preHandler: requireAdmin },
+    async (request, reply) => {
+      const handle = requireDb(reply);
+      if (!handle) return;
+
+      const { id } = request.params as { id: string };
+      const parsed = FormDefinitionSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.status(400).send({
+          error: "Invalid form definition",
+          issues: parsed.error.issues
+        });
+      }
+
+      const [updated] = await handle
+        .update(forms)
+        .set({
+          title: parsed.data.title,
+          definition: parsed.data,
+          updatedAt: new Date()
+        })
+        .where(eq(forms.id, id))
+        .returning({ id: forms.id });
+
+      if (!updated) {
+        return reply.status(404).send({ error: "Form not found" });
+      }
+      return { id: updated.id };
+    }
+  );
 
   app.get("/api/forms/:id", async (request, reply) => {
     const handle = requireDb(reply);

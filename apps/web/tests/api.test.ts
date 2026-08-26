@@ -38,7 +38,10 @@ describe("api client", () => {
 
       expect(form.title).toBe("Published form");
       expect(form.questions).toHaveLength(1);
-      expect(fetchMock).toHaveBeenCalledWith(`/api/forms/${publishedForm.id}`);
+      expect(fetchMock).toHaveBeenCalledWith(
+        `/api/forms/${publishedForm.id}`,
+        undefined
+      );
     });
 
     it("throws an ApiError carrying the status on failure", async () => {

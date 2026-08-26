@@ -11,6 +11,8 @@ import { responses } from "../../src/db/schema";
 import { runMigrations } from "../../src/db/migrator";
 
 const QUESTION_ID = "22222222-2222-4222-8222-222222222222";
+const ADMIN_PASSWORD = "test-admin-password";
+const SESSION_KEY = "test-session-key-0123456789abcdef0123456789abcdef";
 
 function sampleDefinition() {
   return {
@@ -46,6 +48,36 @@ suite("forms + responses integration", () => {
   let db: Db;
   let pool: Pool | undefined;
   let app: FastifyInstance;
+  let adminCookie: string;
+
+  const asAdmin = (headers: Record<string, string> = {}) => ({
+    ...headers,
+    cookie: adminCookie
+  });
+
+  const createForm = (payload: object) =>
+    app.inject({
+      method: "POST",
+      url: "/api/forms",
+      payload,
+      headers: asAdmin()
+    });
+
+  const publishForm = (formId: string) =>
+    app.inject({
+      method: "POST",
+      url: `/api/forms/${formId}/publish`,
+      payload: {},
+      headers: asAdmin()
+    });
+
+  async function login(password: string) {
+    return app.inject({
+      method: "POST",
+      url: "/api/admin/login",
+      payload: { password }
+    });
+  }
 
   beforeAll(async () => {
     if (!container) return;
@@ -53,7 +85,15 @@ suite("forms + responses integration", () => {
     db = handle.db;
     pool = handle.pool;
     await runMigrations(db);
-    app = buildApp({ db });
+    app = buildApp({ db, adminPassword: ADMIN_PASSWORD, sessionKey: SESSION_KEY });
+
+    const loginResult = await login(ADMIN_PASSWORD);
+    expect(loginResult.statusCode).toBe(200);
+    // Echo the raw Set-Cookie pair: the signed value contains encoded
+    // separators, so reparsing via response.cookies corrupts it.
+    const setCookie = loginResult.headers["set-cookie"];
+    const rawCookie = Array.isArray(setCookie) ? setCookie[0] : setCookie;
+    adminCookie = String(rawCookie ?? "").split(";")[0] ?? "";
   });
 
   afterAll(async () => {
@@ -61,12 +101,55 @@ suite("forms + responses integration", () => {
     await container?.stop();
   });
 
-  it("creates, publishes and serves a frozen snapshot", async () => {
-    const created = await app.inject({
+  it("locks anonymous users out of form management", async () => {
+    const anon = await app.inject({
       method: "POST",
       url: "/api/forms",
       payload: sampleDefinition()
     });
+    expect(anon.statusCode).toBe(401);
+
+    const anonList = await app.inject({ method: "GET", url: "/api/admin/forms" });
+    expect(anonList.statusCode).toBe(401);
+  });
+
+  it("rejects bad credentials but accepts the configured password", async () => {
+    const wrong = await login("not-the-password");
+    expect(wrong.statusCode).toBe(401);
+
+    const right = await login(ADMIN_PASSWORD);
+    expect(right.statusCode).toBe(200);
+    expect(right.json()).toEqual({ ok: true });
+  });
+
+  it("returns 503 when the admin password is not configured", async () => {
+    const previousPassword = process.env.ADMIN_PASSWORD;
+    const previousKey = process.env.SESSION_KEY;
+    delete process.env.ADMIN_PASSWORD;
+    delete process.env.SESSION_KEY;
+    try {
+      const bare = buildApp({ db });
+      const attempt = await bare.inject({
+        method: "POST",
+        url: "/api/admin/login",
+        payload: { password: "anything" }
+      });
+      expect(attempt.statusCode).toBe(503);
+
+      const locked = await bare.inject({
+        method: "POST",
+        url: "/api/forms",
+        payload: sampleDefinition()
+      });
+      expect(locked.statusCode).toBe(503);
+    } finally {
+      if (previousPassword !== undefined) process.env.ADMIN_PASSWORD = previousPassword;
+      if (previousKey !== undefined) process.env.SESSION_KEY = previousKey;
+    }
+  });
+
+  it("creates, publishes and serves a frozen snapshot", async () => {
+    const created = await createForm(sampleDefinition());
     expect(created.statusCode).toBe(201);
     const formId = created.json().id;
 
@@ -76,11 +159,7 @@ suite("forms + responses integration", () => {
     });
     expect(unpublished.statusCode).toBe(404);
 
-    const published = await app.inject({
-      method: "POST",
-      url: `/api/forms/${formId}/publish`,
-      payload: {}
-    });
+    const published = await publishForm(formId);
     expect(published.statusCode).toBe(200);
     expect(published.json()).toEqual({ id: formId, version: 1 });
 
@@ -97,28 +176,90 @@ suite("forms + responses integration", () => {
   });
 
   it("bumps the version on each publish", async () => {
-    const created = await app.inject({
-      method: "POST",
-      url: "/api/forms",
-      payload: sampleDefinition()
-    });
+    const created = await createForm(sampleDefinition());
     const formId = created.json().id;
 
-    await app.inject({ method: "POST", url: `/api/forms/${formId}/publish`, payload: {} });
-    const second = await app.inject({
-      method: "POST",
-      url: `/api/forms/${formId}/publish`,
-      payload: {}
-    });
+    await publishForm(formId);
+    const second = await publishForm(formId);
     expect(second.json().version).toBe(2);
   });
 
-  it("rejects batch items pinned to an unknown form version", async () => {
-    const created = await app.inject({
-      method: "POST",
-      url: "/api/forms",
-      payload: sampleDefinition()
+  it("serves the next version after re-uploading a definition", async () => {
+    const created = await createForm(sampleDefinition());
+    const formId = created.json().id;
+    await publishForm(formId);
+
+    const updatedDefinition = {
+      title: "Integration form (revamped)",
+      questions: [
+        {
+          id: QUESTION_ID,
+          type: "radio",
+          question: "Attending remotely?",
+          options: ["Yes", "No", "Maybe"],
+          required: true
+        }
+      ]
+    };
+
+    const uploaded = await app.inject({
+      method: "PUT",
+      url: `/api/forms/${formId}/definition`,
+      payload: updatedDefinition,
+      headers: asAdmin()
     });
+    expect(uploaded.statusCode).toBe(200);
+
+    const published = await publishForm(formId);
+    expect(published.json()).toEqual({ id: formId, version: 2 });
+
+    const fetched = await app.inject({
+      method: "GET",
+      url: `/api/forms/${formId}`
+    });
+    const body = fetched.json();
+    expect(body.title).toBe("Integration form (revamped)");
+    expect(body.version).toBe(2);
+    expect(body.questions[0].options).toEqual(["Yes", "No", "Maybe"]);
+
+    const rejectedUpload = await app.inject({
+      method: "PUT",
+      url: `/api/forms/${formId}/definition`,
+      payload: { nonsense: true },
+      headers: asAdmin()
+    });
+    expect(rejectedUpload.statusCode).toBe(400);
+
+    const missingForm = await app.inject({
+      method: "PUT",
+      url: `/api/forms/${randomUUID()}/definition`,
+      payload: updatedDefinition,
+      headers: asAdmin()
+    });
+    expect(missingForm.statusCode).toBe(404);
+  });
+
+  it("lists existing forms for the admin", async () => {
+    const created = await createForm(sampleDefinition());
+    const formId = created.json().id;
+    await publishForm(formId);
+
+    const listed = await app.inject({
+      method: "GET",
+      url: "/api/admin/forms",
+      headers: asAdmin()
+    });
+    expect(listed.statusCode).toBe(200);
+    const entry = listed
+      .json()
+      .forms.find((row: { id: string }) => row.id === formId);
+    expect(entry).toBeTruthy();
+    expect(entry.title).toBe("Integration form");
+    expect(entry.publishedVersion).toBeGreaterThanOrEqual(1);
+  });
+
+  it("rejects batch items pinned to an unknown form version", async () => {
+    const created = await createForm(sampleDefinition());
     const formId = created.json().id;
     const submission = {
       id: randomUUID(),
@@ -146,13 +287,9 @@ suite("forms + responses integration", () => {
   });
 
   it("accepts each valid response in a batch exactly once", async () => {
-    const created = await app.inject({
-      method: "POST",
-      url: "/api/forms",
-      payload: sampleDefinition()
-    });
+    const created = await createForm(sampleDefinition());
     const formId = created.json().id;
-    await app.inject({ method: "POST", url: `/api/forms/${formId}/publish`, payload: {} });
+    await publishForm(formId);
 
     const first = {
       id: randomUUID(),
@@ -197,13 +334,9 @@ suite("forms + responses integration", () => {
   });
 
   it("rejects off-menu answers with issue details", async () => {
-    const created = await app.inject({
-      method: "POST",
-      url: "/api/forms",
-      payload: sampleDefinition()
-    });
+    const created = await createForm(sampleDefinition());
     const formId = created.json().id;
-    await app.inject({ method: "POST", url: `/api/forms/${formId}/publish`, payload: {} });
+    await publishForm(formId);
 
     const result = await app.inject({
       method: "POST",
@@ -238,13 +371,9 @@ suite("forms + responses integration", () => {
   });
 
   it("keeps structurally-bad items from failing the whole batch", async () => {
-    const created = await app.inject({
-      method: "POST",
-      url: "/api/forms",
-      payload: sampleDefinition()
-    });
+    const created = await createForm(sampleDefinition());
     const formId = created.json().id;
-    await app.inject({ method: "POST", url: `/api/forms/${formId}/publish`, payload: {} });
+    await publishForm(formId);
 
     const good = {
       id: randomUUID(),
@@ -280,13 +409,9 @@ suite("forms + responses integration", () => {
   });
 
   it("resolves duplicate ids inside one batch", async () => {
-    const created = await app.inject({
-      method: "POST",
-      url: "/api/forms",
-      payload: sampleDefinition()
-    });
+    const created = await createForm(sampleDefinition());
     const formId = created.json().id;
-    await app.inject({ method: "POST", url: `/api/forms/${formId}/publish`, payload: {} });
+    await publishForm(formId);
 
     const submission = {
       id: randomUUID(),
