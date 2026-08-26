@@ -19,6 +19,8 @@ interface IssueEntry {
 }
 
 const DEFAULT_CONFIRMATION = "Thanks! Your response has been recorded.";
+const QUEUED_CONFIRMATION =
+  "Your response is saved and will be sent automatically when you're back online.";
 const DUPLICATE_CONFIRMATION =
   "We already received this response — nothing was changed.";
 
@@ -81,9 +83,11 @@ export function FormView({ definition, onValidSubmit }: FormViewProps) {
         return;
       }
       setConfirmation(
-        outcome && outcome.status === "duplicate"
-          ? DUPLICATE_CONFIRMATION
-          : DEFAULT_CONFIRMATION
+        (outcome as { queued?: boolean } | undefined)?.queued
+          ? QUEUED_CONFIRMATION
+          : outcome && outcome.status === "duplicate"
+            ? DUPLICATE_CONFIRMATION
+            : DEFAULT_CONFIRMATION
       );
     } catch {
       setServerError(true);

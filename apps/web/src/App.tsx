@@ -3,6 +3,7 @@ import { FormView } from "./components/FormView";
 import { FormLoader } from "./components/FormLoader";
 import { AdminPage } from "./admin/AdminPage";
 import { Link, useRoute } from "./router";
+import { OfflineIndicator } from "./offline/OfflineIndicator";
 
 const ADMIN_PAGES = new Set(["admin", "admin-new", "admin-edit"]);
 
@@ -13,7 +14,8 @@ export default function App() {
     <main>
       <h1>EZScout</h1>
       <p>
-        <Link to="/">Home</Link> · <Link to="/admin">Admin</Link>
+        <Link to="/">Home</Link> · <Link to="/admin">Admin</Link>{" "}
+        <OfflineIndicator />
       </p>
       {route.page === "home" ? (
         <>

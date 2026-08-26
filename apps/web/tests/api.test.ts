@@ -2,6 +2,13 @@ import { ApiError, getPublishedForm, submitResponses } from "../src/api";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Submission } from "@ezscout/shared";
 
+vi.mock("../src/offline/db", () => ({
+  db: {
+    forms: { put: vi.fn(), get: vi.fn() },
+    outbox: { bulkAdd: vi.fn(), count: vi.fn().mockResolvedValue(0) }
+  }
+}));
+
 const publishedForm = {
   id: "0198f7a2-7b3c-7000-8000-3b9ac95e4a01",
   title: "Published form",

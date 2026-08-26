@@ -4,6 +4,7 @@ import type {
   Submission,
   SubmissionBatchResult
 } from "@ezscout/shared";
+import { db } from "./offline/db";
 
 export class ApiError extends Error {
   readonly status: number;
@@ -30,13 +31,52 @@ async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 export async function getPublishedForm(formId: string): Promise<PublicForm> {
-  return requestJson<PublicForm>(`/api/forms/${formId}`);
+  try {
+    const form = await requestJson<PublicForm>(`/api/forms/${formId}`);
+    await db.forms.put({
+      id: formId,
+      definition: form,
+      fetchedAt: Date.now()
+    });
+    return form;
+  } catch (error) {
+    if (navigator.onLine) throw error;
+    const cached = await db.forms.get(formId);
+    if (cached) return cached.definition;
+    throw error;
+  }
+}
+
+export interface QueuedBatchResult extends SubmissionBatchResult {
+  queued?: boolean;
 }
 
 export async function submitResponses(
   submissions: Submission[]
-): Promise<SubmissionBatchResult> {
-  return requestJson<SubmissionBatchResult>("/api/responses", {
+): Promise<QueuedBatchResult> {
+  if (!navigator.onLine) {
+    await db.outbox.bulkAdd(
+      submissions.map((s) => ({
+        id: s.id,
+        formId: s.formId,
+        formVersion: s.formVersion,
+        answers: s.answers as Record<string, unknown>,
+        submittedAt: s.submittedAt ?? new Date().toISOString(),
+        createdAt: Date.now()
+      })),
+      { allKeys: false }
+    );
+    return {
+      results: submissions.map((s, i) => ({
+        index: i,
+        id: s.id,
+        status: "accepted" as const
+      })),
+      queued: true
+    };
+  }
+
+  return requestJson<QueuedBatchResult>("/api/responses", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ responses: submissions })

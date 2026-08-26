@@ -22,6 +22,9 @@
   --error-text: #991b1b;
   --success-bg: #ecfdf5;
   --success-text: #065f46;
+  --warning-bg: #fffbeb;
+  --warning-text: #92400e;
+  --warning-border: #fcd34d;
   --radius: 6px;
   --shadow: 0 1px 4px rgba(0, 0, 0, 0.06), 0 0 0 1px rgba(0, 0, 0, 0.03);
   --max-w: 660px;
@@ -444,6 +447,25 @@ small,
 .text-muted {
   color: var(--text-muted);
   font-size: 0.82rem;
+}
+
+/* ── Offline indicator ──────────────────────────────────── */
+.offline-indicator {
+  font-size: 0.82rem;
+  color: var(--warning-text);
+  font-weight: 500;
+  margin-left: 0.35rem;
+}
+
+/* queued confirmation */
+[role="status"].queued {
+  background: var(--warning-bg);
+  color: var(--warning-text);
+  border: 1px solid var(--warning-border);
+  border-radius: var(--radius);
+  padding: 0.6rem 1rem;
+  margin-top: 0.75rem;
+  font-size: 0.88rem;
 }
 
 @media (max-width: 480px) {
