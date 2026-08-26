@@ -258,6 +258,31 @@ suite("forms + responses integration", () => {
     expect(entry.publishedVersion).toBeGreaterThanOrEqual(1);
   });
 
+  it("returns a form draft definition for the admin", async () => {
+    const created = await createForm(sampleDefinition());
+    const formId = created.json().id;
+    await publishForm(formId);
+
+    const fetched = await app.inject({
+      method: "GET",
+      url: `/api/admin/forms/${formId}`,
+      headers: asAdmin()
+    });
+    expect(fetched.statusCode).toBe(200);
+    const body = fetched.json();
+    expect(body.id).toBe(formId);
+    expect(body.title).toBe("Integration form");
+    expect(body.publishedVersion).toBeGreaterThanOrEqual(1);
+    expect(body.definition).toBeDefined();
+    expect(body.definition.questions).toHaveLength(1);
+
+    const anon = await app.inject({
+      method: "GET",
+      url: `/api/admin/forms/${formId}`
+    });
+    expect(anon.statusCode).toBe(401);
+  });
+
   it("rejects batch items pinned to an unknown form version", async () => {
     const created = await createForm(sampleDefinition());
     const formId = created.json().id;

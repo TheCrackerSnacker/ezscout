@@ -95,3 +95,14 @@ export async function publishForm(
     { method: "POST" }
   );
 }
+
+export async function fetchFormDefinition(
+  formId: string
+): Promise<{
+  id: string;
+  title: string;
+  definition: FormDefinition;
+  publishedVersion: number | null;
+}> {
+  return requestJson(`/api/admin/forms/${formId}`);
+}

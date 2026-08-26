@@ -4,6 +4,8 @@ import { FormLoader } from "./components/FormLoader";
 import { AdminPage } from "./admin/AdminPage";
 import { Link, useRoute } from "./router";
 
+const ADMIN_PAGES = new Set(["admin", "admin-new", "admin-edit"]);
+
 export default function App() {
   const route = useRoute();
 
@@ -22,7 +24,9 @@ export default function App() {
       {route.page === "form" ? (
         <FormLoader key={route.formId} formId={route.formId} />
       ) : null}
-      {route.page === "admin" ? <AdminPage /> : null}
+      {ADMIN_PAGES.has(route.page) ? (
+        <AdminPage route={route} />
+      ) : null}
     </main>
   );
 }

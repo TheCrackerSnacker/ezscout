@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { FormDefinition } from "@ezscout/shared";
 import { AdminPage } from "../src/admin/AdminPage";
+import type { Route } from "../src/router";
 
 const validDraft: FormDefinition = {
   title: "Uploaded form",
@@ -15,9 +16,12 @@ const validDraft: FormDefinition = {
   ]
 };
 
+const FORM_ID = "0198f7a2-7b3c-7000-8000-3b9ac95e4a01";
+
 const apiMocks = vi.hoisted(() => ({
   fetchSession: vi.fn(),
   fetchAdminForms: vi.fn(),
+  fetchFormDefinition: vi.fn(),
   login: vi.fn(),
   logout: vi.fn(),
   uploadDefinition: vi.fn(),
@@ -25,6 +29,18 @@ const apiMocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../src/api", () => apiMocks);
+
+vi.mock("../src/router", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/router")>();
+  return {
+    ...actual,
+    navigate: vi.fn()
+  };
+});
+
+const adminRoute: Route = { page: "admin" };
+const newRoute: Route = { page: "admin-new" };
+const editRoute: Route = { page: "admin-edit", formId: FORM_ID };
 
 describe("AdminPage", () => {
   beforeEach(() => {
@@ -37,18 +53,18 @@ describe("AdminPage", () => {
   it("shows the sign-in card when unauthenticated", async () => {
     apiMocks.fetchSession.mockResolvedValue({ authenticated: false });
 
-    render(<AdminPage />);
+    render(<AdminPage route={adminRoute} />);
 
     await waitFor(() =>
       expect(screen.getByLabelText("Admin password")).toBeTruthy()
     );
   });
 
-  it("signs in and reveals the uploader", async () => {
+  it("signs in and shows the forms list", async () => {
     apiMocks.fetchSession.mockResolvedValue({ authenticated: false });
     apiMocks.login.mockResolvedValue(undefined);
 
-    render(<AdminPage />);
+    render(<AdminPage route={adminRoute} />);
     await waitFor(() =>
       expect(screen.getByLabelText("Admin password")).toBeTruthy()
     );
@@ -59,25 +75,26 @@ describe("AdminPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
 
     await waitFor(() =>
-      expect(
-        screen.getByLabelText("Form definition JSON")
-      ).toBeTruthy()
+      expect(screen.getByText("Existing forms")).toBeTruthy()
     );
     expect(apiMocks.login).toHaveBeenCalledWith("secret");
   });
 
-  it("validates a pasted draft and publishes it as a new form", async () => {
+  it("shows the editor for new forms", async () => {
     apiMocks.fetchSession.mockResolvedValue({ authenticated: true });
-    apiMocks.fetchAdminForms.mockResolvedValue([
-      {
-        id: "existing-1",
-        title: "Existing form",
-        publishedVersion: 1,
-        updatedAt: new Date().toISOString()
-      }
-    ]);
 
-    render(<AdminPage />);
+    render(<AdminPage route={newRoute} />);
+
+    await waitFor(() =>
+      expect(screen.getByLabelText("Form definition JSON")).toBeTruthy()
+    );
+  });
+
+  it("validates and publishes a new form from the editor", async () => {
+    apiMocks.fetchSession.mockResolvedValue({ authenticated: true });
+    apiMocks.fetchAdminForms.mockResolvedValue([]);
+
+    render(<AdminPage route={newRoute} />);
     await waitFor(() =>
       expect(screen.getByLabelText("Form definition JSON")).toBeTruthy()
     );
@@ -93,9 +110,7 @@ describe("AdminPage", () => {
     );
 
     await waitFor(() =>
-      expect(screen.getByRole("status").textContent).toContain(
-        "open form form-1"
-      )
+      expect(screen.getByRole("status").textContent).toContain("open form")
     );
     expect(apiMocks.uploadDefinition).toHaveBeenCalledWith(
       validDraft,
@@ -104,10 +119,29 @@ describe("AdminPage", () => {
     expect(apiMocks.publishForm).toHaveBeenCalledWith("form-1");
   });
 
+  it("pre-fills the editor when editing an existing form", async () => {
+    apiMocks.fetchSession.mockResolvedValue({ authenticated: true });
+    apiMocks.fetchFormDefinition.mockResolvedValue({
+      id: FORM_ID,
+      title: "Existing form",
+      definition: validDraft,
+      publishedVersion: 2
+    });
+
+    render(<AdminPage route={editRoute} />);
+
+    await waitFor(() =>
+      expect(screen.getByLabelText("Form definition JSON")).toBeTruthy()
+    );
+    expect(apiMocks.fetchFormDefinition).toHaveBeenCalledWith(FORM_ID);
+    expect(screen.getByText("Edit: Existing form")).toBeTruthy();
+    expect(screen.getByText(/version 3/)).toBeTruthy();
+  });
+
   it("shows validation issues for an invalid draft", async () => {
     apiMocks.fetchSession.mockResolvedValue({ authenticated: true });
 
-    render(<AdminPage />);
+    render(<AdminPage route={newRoute} />);
     await waitFor(() =>
       expect(screen.getByLabelText("Form definition JSON")).toBeTruthy()
     );

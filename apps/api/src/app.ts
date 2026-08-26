@@ -246,6 +246,37 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     return { forms: rows };
   });
 
+  app.get(
+    "/api/admin/forms/:id",
+    { preHandler: requireAdmin },
+    async (request, reply) => {
+      const handle = requireDb(reply);
+      if (!handle) return;
+
+      const { id } = request.params as { id: string };
+      const [row] = await handle
+        .select({
+          id: forms.id,
+          title: forms.title,
+          definition: forms.definition,
+          publishedVersion: forms.publishedVersion
+        })
+        .from(forms)
+        .where(eq(forms.id, id));
+
+      if (!row) {
+        return reply.status(404).send({ error: "Form not found" });
+      }
+
+      return {
+        id: row.id,
+        title: row.title,
+        definition: row.definition,
+        publishedVersion: row.publishedVersion
+      };
+    }
+  );
+
   app.post("/api/forms", { preHandler: requireAdmin }, async (request, reply) => {
     const handle = requireDb(reply);
     if (!handle) return;
