@@ -1,14 +1,8 @@
-import { useEffect, useState } from "react";
-import { ApiError, fetchSession, login, logout } from "../api";
+import { useState } from "react";
+import { ApiError, login } from "../api";
 import type { Route } from "../router";
-import { Link } from "../router";
 import { FormEditorPage } from "./FormEditorPage";
 import { FormsListPage } from "./FormsListPage";
-
-type AuthState =
-  | { phase: "checking" }
-  | { phase: "login" }
-  | { phase: "ready" };
 
 function LoginCard({ onSuccess }: { onSuccess: () => void }) {
   const [password, setPassword] = useState("");
@@ -58,66 +52,23 @@ function LoginCard({ onSuccess }: { onSuccess: () => void }) {
   );
 }
 
-export function AdminPage({ route }: { route: Route }) {
-  const [auth, setAuth] = useState<AuthState>({ phase: "checking" });
-
-  useEffect(() => {
-    let cancelled = false;
-    fetchSession()
-      .then((session) => {
-        if (!cancelled) {
-          setAuth(
-            session.authenticated ? { phase: "ready" } : { phase: "login" }
-          );
-        }
-      })
-      .catch(() => {
-        if (!cancelled) setAuth({ phase: "login" });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const handleSignOut = async () => {
-    await logout();
-    setAuth({ phase: "login" });
-  };
-
-  if (auth.phase === "checking") {
-    return (
-      <main>
-        <p>Checking session…</p>
-      </main>
-    );
+export function AdminPage({
+  route,
+  authenticated,
+  onLogin
+}: {
+  route: Route;
+  authenticated: boolean;
+  onLogin: () => void;
+}) {
+  if (!authenticated) {
+    return <LoginCard onSuccess={onLogin} />;
   }
 
-  return (
-    <main>
-      <h1>EZScout Admin</h1>
-      <p>
-        <Link to="/">← Home</Link>
-        {auth.phase === "ready" ? (
-          <>
-            {" · "}
-            <Link to="/admin">Forms</Link>
-            {" · "}
-            <button type="button" onClick={() => void handleSignOut()}>
-              Sign out
-            </button>
-          </>
-        ) : null}
-      </p>
-
-      {auth.phase === "login" ? (
-        <LoginCard onSuccess={() => setAuth({ phase: "ready" })} />
-      ) : route.page === "admin" ? (
-        <FormsListPage />
-      ) : route.page === "admin-new" ? (
-        <FormEditorPage />
-      ) : route.page === "admin-edit" ? (
-        <FormEditorPage key={route.formId} formId={route.formId} />
-      ) : null}
-    </main>
-  );
+  if (route.page === "admin") return <FormsListPage />;
+  if (route.page === "admin-new") return <FormEditorPage />;
+  if (route.page === "admin-edit") {
+    return <FormEditorPage key={route.formId} formId={route.formId} />;
+  }
+  return null;
 }

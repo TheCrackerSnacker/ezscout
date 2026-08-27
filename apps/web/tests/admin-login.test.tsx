@@ -4,7 +4,6 @@ import type { Route } from "../src/router";
 import { AdminPage } from "../src/admin/AdminPage";
 
 const apiMocks = vi.hoisted(() => ({
-  fetchSession: vi.fn(),
   login: vi.fn(),
   logout: vi.fn()
 }));
@@ -13,9 +12,7 @@ vi.mock("../src/api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../src/api")>();
   return {
     ...actual,
-    fetchSession: apiMocks.fetchSession,
-    login: apiMocks.login,
-    logout: apiMocks.logout
+    ...apiMocks
   };
 });
 
@@ -24,7 +21,6 @@ const adminRoute: Route = { page: "admin" };
 describe("Admin login", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    apiMocks.fetchSession.mockResolvedValue({ authenticated: false });
   });
 
   it("shows the server detail, e.g. a rate-limit message, on failure", async () => {
@@ -37,7 +33,7 @@ describe("Admin login", () => {
       )
     );
 
-    render(<AdminPage route={adminRoute} />);
+    render(<AdminPage route={adminRoute} authenticated={false} onLogin={() => {}} />);
     await screen.findByRole("heading", { name: "Admin sign-in" });
 
     fireEvent.change(screen.getByLabelText("Admin password"), {
@@ -58,7 +54,7 @@ describe("Admin login", () => {
       new ApiError(401, "Invalid credentials", "Invalid credentials")
     );
 
-    render(<AdminPage route={adminRoute} />);
+    render(<AdminPage route={adminRoute} authenticated={false} onLogin={() => {}} />);
     await screen.findByRole("heading", { name: "Admin sign-in" });
 
     fireEvent.change(screen.getByLabelText("Admin password"), {

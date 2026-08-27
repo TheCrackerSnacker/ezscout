@@ -5,10 +5,10 @@ test.describe("Navigation", () => {
     await page.goto("/");
     await expect(page.getByText("Developer preview")).toBeVisible();
 
-    await page.getByRole("link", { name: "Admin" }).click();
+    await page.getByRole("button", { name: "Login" }).click();
     await expect(page.getByRole("heading", { name: "Admin sign-in" })).toBeVisible();
 
-    await page.getByRole("link", { name: "Home" }).first().click();
+    await page.getByRole("link", { name: "Home" }).click();
     await expect(page.getByText("Developer preview")).toBeVisible();
   });
 

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { FormDefinition } from "@ezscout/shared";
@@ -19,7 +20,6 @@ const validDraft: FormDefinition = {
 const FORM_ID = "0198f7a2-7b3c-7000-8000-3b9ac95e4a01";
 
 const apiMocks = vi.hoisted(() => ({
-  fetchSession: vi.fn(),
   fetchAdminForms: vi.fn(),
   fetchFormDefinition: vi.fn(),
   login: vi.fn(),
@@ -28,7 +28,10 @@ const apiMocks = vi.hoisted(() => ({
   publishForm: vi.fn()
 }));
 
-vi.mock("../src/api", () => apiMocks);
+vi.mock("../src/api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/api")>();
+  return { ...actual, ...apiMocks };
+});
 
 vi.mock("../src/router", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../src/router")>();
@@ -42,6 +45,25 @@ const adminRoute: Route = { page: "admin" };
 const newRoute: Route = { page: "admin-new" };
 const editRoute: Route = { page: "admin-edit", formId: FORM_ID };
 
+const noop = () => {};
+
+function AdminHarness({
+  route,
+  initialAuthenticated = false
+}: {
+  route: Route;
+  initialAuthenticated?: boolean;
+}) {
+  const [authenticated, setAuthenticated] = useState(initialAuthenticated);
+  return (
+    <AdminPage
+      route={route}
+      authenticated={authenticated}
+      onLogin={() => setAuthenticated(true)}
+    />
+  );
+}
+
 describe("AdminPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -51,9 +73,7 @@ describe("AdminPage", () => {
   });
 
   it("shows the sign-in card when unauthenticated", async () => {
-    apiMocks.fetchSession.mockResolvedValue({ authenticated: false });
-
-    render(<AdminPage route={adminRoute} />);
+    render(<AdminHarness route={adminRoute} />);
 
     await waitFor(() =>
       expect(screen.getByLabelText("Admin password")).toBeTruthy()
@@ -61,10 +81,9 @@ describe("AdminPage", () => {
   });
 
   it("signs in and shows the forms list", async () => {
-    apiMocks.fetchSession.mockResolvedValue({ authenticated: false });
     apiMocks.login.mockResolvedValue(undefined);
 
-    render(<AdminPage route={adminRoute} />);
+    render(<AdminHarness route={adminRoute} />);
     await waitFor(() =>
       expect(screen.getByLabelText("Admin password")).toBeTruthy()
     );
@@ -81,9 +100,7 @@ describe("AdminPage", () => {
   });
 
   it("shows the editor for new forms", async () => {
-    apiMocks.fetchSession.mockResolvedValue({ authenticated: true });
-
-    render(<AdminPage route={newRoute} />);
+    render(<AdminPage route={newRoute} authenticated onLogin={noop} />);
 
     await waitFor(() =>
       expect(screen.getByLabelText("Form definition JSON")).toBeTruthy()
@@ -91,10 +108,9 @@ describe("AdminPage", () => {
   });
 
   it("validates and publishes a new form from the editor", async () => {
-    apiMocks.fetchSession.mockResolvedValue({ authenticated: true });
     apiMocks.fetchAdminForms.mockResolvedValue([]);
 
-    render(<AdminPage route={newRoute} />);
+    render(<AdminPage route={newRoute} authenticated onLogin={noop} />);
     await waitFor(() =>
       expect(screen.getByLabelText("Form definition JSON")).toBeTruthy()
     );
@@ -120,7 +136,6 @@ describe("AdminPage", () => {
   });
 
   it("pre-fills the editor when editing an existing form", async () => {
-    apiMocks.fetchSession.mockResolvedValue({ authenticated: true });
     apiMocks.fetchFormDefinition.mockResolvedValue({
       id: FORM_ID,
       title: "Existing form",
@@ -128,7 +143,7 @@ describe("AdminPage", () => {
       publishedVersion: 2
     });
 
-    render(<AdminPage route={editRoute} />);
+    render(<AdminPage route={editRoute} authenticated onLogin={noop} />);
 
     await waitFor(() =>
       expect(screen.getByLabelText("Form definition JSON")).toBeTruthy()
@@ -139,9 +154,7 @@ describe("AdminPage", () => {
   });
 
   it("shows validation issues for an invalid draft", async () => {
-    apiMocks.fetchSession.mockResolvedValue({ authenticated: true });
-
-    render(<AdminPage route={newRoute} />);
+    render(<AdminPage route={newRoute} authenticated onLogin={noop} />);
     await waitFor(() =>
       expect(screen.getByLabelText("Form definition JSON")).toBeTruthy()
     );

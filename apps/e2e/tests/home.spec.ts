@@ -1,11 +1,11 @@
 import { test, expect } from "@playwright/test";
 
 test.describe("Home page", () => {
-  test("loads with title and nav links", async ({ page }) => {
+  test("loads with logo, sign-in, and sample content", async ({ page }) => {
     await page.goto("/");
-    await expect(page.getByRole("heading", { level: 1 })).toHaveText("EZScout");
-    await expect(page.getByRole("link", { name: "Home" })).toBeVisible();
-    await expect(page.getByRole("link", { name: "Admin" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "EZScout" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Login" })).toBeVisible();
+    await expect(page.getByText("Developer preview")).toBeVisible();
   });
 
   test("renders sample form with all question types", async ({ page }) => {

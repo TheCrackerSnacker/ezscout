@@ -46,6 +46,83 @@ main {
   padding: 0 1.25rem;
 }
 
+/* ── App shell (top bar + menu) ─────────────────────────── */
+.app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.top-bar {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.top-bar-inner {
+  max-width: var(--max-w);
+  margin: 0 auto;
+  padding: 0.6rem 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 700;
+  font-size: 1.15rem;
+  color: var(--text);
+}
+
+.brand img {
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+}
+
+.brand:hover {
+  text-decoration: none;
+  opacity: 0.9;
+}
+
+.top-bar-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.auth-button {
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  background: var(--surface);
+}
+
+.auth-button:hover {
+  background: var(--accent-light);
+}
+
+.menu {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.menu-inner {
+  max-width: var(--max-w);
+  margin: 0 auto;
+  padding: 0.45rem 1.25rem;
+  display: flex;
+  align-items: baseline;
+  gap: 1.25rem;
+}
+
+.menu a {
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
 h1 {
   font-size: 1.5rem;
   font-weight: 700;

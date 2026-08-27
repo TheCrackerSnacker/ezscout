@@ -50,10 +50,11 @@ export function navigate(to: string): void {
 
 interface LinkProps {
   to: string;
+  className?: string;
   children: ReactNode;
 }
 
-export function Link({ to, children }: LinkProps) {
+export function Link({ to, className, children }: LinkProps) {
   const onClick = (event: MouseEvent<HTMLAnchorElement>) => {
     if (
       event.defaultPrevented ||
@@ -70,7 +71,7 @@ export function Link({ to, children }: LinkProps) {
   };
 
   return (
-    <a href={to} onClick={onClick}>
+    <a href={to} className={className} onClick={onClick}>
       {children}
     </a>
   );
