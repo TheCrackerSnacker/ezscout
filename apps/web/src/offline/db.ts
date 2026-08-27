@@ -14,6 +14,8 @@ export interface OutboxEntry {
   answers: Record<string, unknown>;
   submittedAt: string;
   createdAt: number;
+  retryCount: number;
+  lastAttemptAt: number;
 }
 
 class EzScoutDB extends Dexie {

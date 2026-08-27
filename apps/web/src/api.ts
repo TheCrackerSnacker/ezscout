@@ -62,7 +62,9 @@ export async function submitResponses(
         formVersion: s.formVersion,
         answers: s.answers as Record<string, unknown>,
         submittedAt: s.submittedAt ?? new Date().toISOString(),
-        createdAt: Date.now()
+        createdAt: Date.now(),
+        retryCount: 0,
+        lastAttemptAt: 0
       })),
       { allKeys: false }
     );

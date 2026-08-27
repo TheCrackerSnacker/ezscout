@@ -19,13 +19,16 @@ export function OfflineIndicator() {
       void refresh();
     }, 3000);
 
-    window.addEventListener("online", () => {
+    const handleOnline = () => {
       void drainOutbox().then(refresh);
-    });
+    };
+
+    window.addEventListener("online", handleOnline);
 
     return () => {
       active = false;
       clearInterval(interval);
+      window.removeEventListener("online", handleOnline);
     };
   }, []);
 
