@@ -54,10 +54,7 @@ describe("api client", () => {
 
       expect(form.title).toBe("Published form");
       expect(form.questions).toHaveLength(1);
-      expect(fetchMock).toHaveBeenCalledWith(
-        `/api/forms/${publishedForm.id}`,
-        undefined
-      );
+      expect(fetchMock).toHaveBeenCalledWith(`/api/forms/${publishedForm.id}`);
     });
 
     it("throws an ApiError carrying the status on failure", async () => {
@@ -69,6 +66,23 @@ describe("api client", () => {
 
       expect(error).toBeInstanceOf(ApiError);
       expect((error as ApiError).status).toBe(404);
+    });
+
+    it("rejects a payload that violates the public form schema", async () => {
+      const malformed = (await JSON.parse(
+        JSON.stringify(publishedForm)
+      )) as Record<string, unknown>;
+      delete malformed.version;
+      fetchMock.mockResolvedValue(
+        new Response(JSON.stringify(malformed), { status: 200 })
+      );
+
+      const error = await getPublishedForm(publishedForm.id).catch(
+        (caught: unknown) => caught
+      );
+
+      expect(error).toBeInstanceOf(Error);
+      expect((error as { status?: number }).status).toBeUndefined();
     });
   });
 

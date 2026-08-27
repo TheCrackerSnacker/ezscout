@@ -11,6 +11,7 @@ import { and, desc, eq, or, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import {
   FormDefinitionSchema,
+  PublicFormSchema,
   SubmissionBatchEnvelopeSchema,
   SubmissionSchema,
   validateAnswers,
@@ -438,13 +439,18 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       return reply.status(500).send({ error: "Stored form definition is invalid" });
     }
 
-    return {
+    const result = PublicFormSchema.safeParse({
       id,
       title: parsed.data.title,
       description: parsed.data.description,
       version: row.snapshotVersion,
       questions: parsed.data.questions
-    };
+    });
+    if (!result.success) {
+      return reply.status(500).send({ error: "Stored form definition is invalid" });
+    }
+
+    return result.data;
   });
 
   app.post("/api/responses", async (request, reply) => {

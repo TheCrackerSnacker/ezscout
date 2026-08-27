@@ -52,13 +52,15 @@ export async function seedPublishedForm(
     data: { password: ADMIN_PASSWORD }
   });
   const body = (await loginResp.json()) as { csrfToken?: string };
-  const csrf = body.csrfToken ? { "X-CSRF-Token": body.csrfToken } : {};
+  const headers: Record<string, string> = body.csrfToken
+    ? { "X-CSRF-Token": body.csrfToken }
+    : {};
 
   const createResp = await request.post(`${BASE_URL}/api/forms`, {
     data: TEST_FORM,
-    headers: csrf
+    headers
   });
   const { id } = (await createResp.json()) as { id: string };
-  await request.post(`${BASE_URL}/api/forms/${id}/publish`, { headers: csrf });
+  await request.post(`${BASE_URL}/api/forms/${id}/publish`, { headers });
   return id;
 }

@@ -47,8 +47,7 @@ test-integration:
 
 test-e2e: ## Run e2e tests against test stack
 	docker compose -f docker-compose.test.yml up -d --build
-	@echo "Waiting for stack..."
-	@sleep 15
+	node scripts/wait-for-health.mjs http://localhost:8081/api/health
 	npm run test:e2e
 	docker compose -f docker-compose.test.yml down
 

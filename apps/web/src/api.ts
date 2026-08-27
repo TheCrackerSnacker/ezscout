@@ -4,6 +4,7 @@ import type {
   Submission,
   SubmissionBatchResult
 } from "@ezscout/shared";
+import { PublicFormSchema } from "@ezscout/shared";
 import { db } from "./offline/db";
 
 export class ApiError extends Error {
@@ -38,7 +39,11 @@ function csrfHeaders(): Record<string, string> {
 
 export async function getPublishedForm(formId: string): Promise<PublicForm> {
   try {
-    const form = await requestJson<PublicForm>(`/api/forms/${formId}`);
+    const response = await fetch(`/api/forms/${formId}`);
+    if (!response.ok) {
+      throw new ApiError(response.status, `Request failed (${response.status})`);
+    }
+    const form = PublicFormSchema.parse(await response.json());
     await db.forms.put({
       id: formId,
       definition: form,

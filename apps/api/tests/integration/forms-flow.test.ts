@@ -9,6 +9,7 @@ import { buildApp } from "../../src/app";
 import { createDb, type Db } from "../../src/db/client";
 import { responses } from "../../src/db/schema";
 import { runMigrations } from "../../src/db/migrator";
+import { PublicFormSchema } from "@ezscout/shared";
 
 const QUESTION_ID = "22222222-2222-4222-8222-222222222222";
 const ADMIN_PASSWORD = "test-admin-password";
@@ -172,10 +173,22 @@ suite("forms + responses integration", () => {
     });
     expect(fetched.statusCode).toBe(200);
     const body = fetched.json();
-    expect(body.title).toBe("Integration form");
-    expect(body.version).toBe(1);
+    expect(PublicFormSchema.parse(body)).toEqual({
+      id: formId,
+      title: "Integration form",
+      description: undefined,
+      version: 1,
+      questions: [
+        {
+          id: QUESTION_ID,
+          type: "radio",
+          question: "Attending?",
+          options: ["Yes", "No"],
+          required: true
+        }
+      ]
+    });
     expect(body.questions).toHaveLength(1);
-    expect(body.questions[0].options).toEqual(["Yes", "No"]);
   });
 
   it("bumps the version on each publish", async () => {

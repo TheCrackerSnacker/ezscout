@@ -26,9 +26,9 @@ Web at `localhost:5173`, API at `localhost:3000`.
 | `make dev` | Start full stack in foreground (API + web + Postgres) |
 | `make down` | Stop dev stack |
 | `make logs` | Tail container logs |
-| `make test` | Run all unit tests across workspaces |
-| `make lint` | Lint all packages |
-| `make typecheck` | Typecheck all packages |
+| `make test` | Run all unit tests across workspaces (excludes e2e; use `test:e2e`) |
+| `make lint` | Lint all packages (including e2e specs) |
+| `make typecheck` | Typecheck all packages (including e2e specs) |
 | `make test-integration` | Run API integration tests (requires Docker) |
 | `make test-e2e` | Run Playwright e2e tests against test stack |
 | `make build` | Build prod Docker images |

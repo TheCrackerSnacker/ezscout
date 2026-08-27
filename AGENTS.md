@@ -10,10 +10,15 @@ Toolchain versions are unusual: **TypeScript 7**, zod 4 (`z.uuid()`, two-arg `z.
 
 ```sh
 make dev          # foreground, Ctrl-C stops the whole stack; use `docker compose up -d --build` for detached
-make lint && make typecheck && make test    # full verification order; run all three before finishing work
+make lint && make typecheck && make test    # unit-layer verification order; run all three before finishing work
+make test-integration                       # Testcontainers Postgres; needs Docker Desktop RUNNING
+make test-e2e                               # Playwright against the docker-compose.test.yml stack (health-waited, then torn down)
 npm test -w @ezscout/web                    # single-package anything: -w @ezscout/{api,web,shared}
+npm run test:coverage -w @ezscout/web       # vitest + v8 coverage (lcov+text) for api/web/shared
 npm run test:integration -w @ezscout/api    # Testcontainers Postgres; needs Docker Desktop RUNNING
 ```
+
+`npm test` / `make test` at the root run **unit tests only** — the e2e workspace's script is `test:e2e`, so the root `--workspaces` invocations skip it automatically; Playwright runs only via `npm run test:e2e` (root) / `make test-e2e`.
 
 Ports: web 5173 · api 3000 · prod nginx 8080 · postgres 5432 (dev) / 5433 (integration).
 
@@ -22,6 +27,7 @@ Ports: web 5173 · api 3000 · prod nginx 8080 · postgres 5432 (dev) / 5433 (in
 - **Integration tests silently SKIP if the Docker engine is unreachable** — a green run may mean nothing ran. Check output shows tests passing, not skipped. Suite lives in `apps/api/tests/integration/**` with its own `vitest.integration.config.ts` (`fileParallelism: false`).
 - Unit scope is `tests/*.test.ts` only (api) / `tests/**` (web, shared) — keep suites in the right config or they won't run.
 - `apps/web/vite.config.ts` doubles as the vitest config (dev server + jsdom test env). It must import `defineConfig` from `"vitest/config"` or `tsc --noEmit` fails.
+- Coverage is **report-only** (no enforced thresholds) — v8 provider, lcov+text, produced by `npm run test:coverage` and CI, which uploads `**/coverage/lcov.info`. Don't gate CI on percent numbers, and don't add thresholds without agreeing on baselines first.
 
 ## Architecture rules
 

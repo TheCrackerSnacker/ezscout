@@ -13,6 +13,7 @@ test.describe("Home page", () => {
     await expect(page.getByText("Scout Field Report")).toBeVisible();
     await expect(page.getByText("What is your name?")).toBeVisible();
     await expect(page.getByText("Which zone did you scout?")).toBeVisible();
+    await expect(page.getByText("Any additional observations?")).toBeVisible();
     await expect(page.getByText("What did you observe?")).toBeVisible();
     await expect(
       page.getByText("How many kilometers did you cover?")
