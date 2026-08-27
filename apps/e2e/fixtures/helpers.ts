@@ -48,13 +48,17 @@ export async function loginAsAdmin(page: Page): Promise<void> {
 export async function seedPublishedForm(
   request: APIRequestContext
 ): Promise<string> {
-  await request.post(`${BASE_URL}/api/admin/login`, {
+  const loginResp = await request.post(`${BASE_URL}/api/admin/login`, {
     data: { password: ADMIN_PASSWORD }
   });
+  const body = (await loginResp.json()) as { csrfToken?: string };
+  const csrf = body.csrfToken ? { "X-CSRF-Token": body.csrfToken } : {};
+
   const createResp = await request.post(`${BASE_URL}/api/forms`, {
-    data: TEST_FORM
+    data: TEST_FORM,
+    headers: csrf
   });
   const { id } = (await createResp.json()) as { id: string };
-  await request.post(`${BASE_URL}/api/forms/${id}/publish`);
+  await request.post(`${BASE_URL}/api/forms/${id}/publish`, { headers: csrf });
   return id;
 }

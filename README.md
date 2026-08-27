@@ -76,6 +76,8 @@ Copy `.env.example` to `.env`. All variables have sensible dev defaults.
 | `DATABASE_URL` | Full Postgres connection string | `postgres://ezscout:change-me@localhost:5432/ezscout` |
 | `ADMIN_PASSWORD` | Single admin password for form management | `admin-dev-password` (dev) |
 | `SESSION_KEY` | Secret for signed session cookies (min 32 chars) | `dev-session-key-please-change-me-32+` (dev) |
+| `COOKIE_SECURE` | Set `true` when the API is served behind TLS | `false` |
+| `LOGIN_RATE_LIMIT` | Max admin login attempts per minute per IP | `20` |
 
 ## Architecture
 
@@ -100,7 +102,7 @@ The web app works offline via a service worker (Workbox), IndexedDB outbox (Dexi
 
 ### Admin auth
 
-All admin routes are protected by a single `ADMIN_PASSWORD`. The session is a signed cookie (`@fastify/secure-session`). Unset password keeps admin routes fail-closed (503).
+All admin routes are protected by a single `ADMIN_PASSWORD`. The session is a signed cookie (`@fastify/secure-session`). Unset password keeps admin routes fail-closed (503). Login is rate-limited (20 attempts/min). Admin mutations also require a CSRF token (issued at login/session, echoed in the `X-CSRF-Token` header) — defense in depth on top of the cookie's `SameSite=Lax`.
 
 ## Testing
 

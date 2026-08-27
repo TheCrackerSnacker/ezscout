@@ -19,7 +19,8 @@ describe("Admin auth flow", () => {
       payload: { password: ADMIN_PASSWORD }
     });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ ok: true });
+    expect(res.json().ok).toBe(true);
+    expect(typeof res.json().csrfToken).toBe("string");
     expect(res.headers["set-cookie"]).toBeDefined();
   });
 
@@ -78,7 +79,8 @@ describe("Admin auth flow", () => {
       headers: { cookie }
     });
     expect(session.statusCode).toBe(200);
-    expect(session.json()).toEqual({ authenticated: true });
+    expect(session.json().authenticated).toBe(true);
+    expect(typeof session.json().csrfToken).toBe("string");
   });
 
   it("logout clears the session", async () => {
@@ -89,11 +91,12 @@ describe("Admin auth flow", () => {
       payload: { password: ADMIN_PASSWORD }
     });
     const cookie = extractCookie(login.headers as Record<string, unknown>);
+    const csrfToken = login.json().csrfToken as string;
 
     const logout = await app.inject({
       method: "POST",
       url: "/api/admin/logout",
-      headers: { cookie }
+      headers: { cookie, "x-csrf-token": csrfToken }
     });
     expect(logout.statusCode).toBe(200);
     expect(logout.json()).toEqual({ ok: true });
@@ -120,6 +123,7 @@ describe("Admin auth flow", () => {
     });
     expect(login.statusCode).toBe(200);
     const cookie = extractCookie(login.headers as Record<string, unknown>);
+    const csrfToken = login.json().csrfToken as string;
 
     const s2 = await app.inject({
       method: "GET",
@@ -131,7 +135,7 @@ describe("Admin auth flow", () => {
     const logout = await app.inject({
       method: "POST",
       url: "/api/admin/logout",
-      headers: { cookie }
+      headers: { cookie, "x-csrf-token": csrfToken }
     });
     const logoutCookie = extractCookie(logout.headers as Record<string, unknown>);
 
@@ -155,5 +159,150 @@ describe("Admin auth flow", () => {
     const res = await app.inject({ method: "GET", url: "/api/admin/forms" });
     expect(res.statusCode).toBe(503);
     expect(res.json()).toEqual({ error: "Admin not configured" });
+  });
+});
+
+describe("CSRF protection", () => {
+  const sampleDefinition = {
+    title: "Scouting form",
+    questions: [{ id: "0198f7a2-7b3c-7000-8000-000000000001", type: "text", question: "Q" }]
+  };
+
+  it("rejects admin mutations without a csrf token", async () => {
+    const app = buildApp({
+      adminPassword: ADMIN_PASSWORD,
+      sessionKey: SESSION_KEY
+    });
+    const login = await app.inject({
+      method: "POST",
+      url: "/api/admin/login",
+      payload: { password: ADMIN_PASSWORD }
+    });
+    const cookie = extractCookie(login.headers as Record<string, unknown>);
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/forms",
+      headers: { cookie },
+      payload: sampleDefinition
+    });
+    expect(res.statusCode).toBe(403);
+    expect(res.json().message).toBe("Invalid csrf token");
+  });
+
+  it("rejects mutations with a wrong csrf token", async () => {
+    const app = buildApp({
+      adminPassword: ADMIN_PASSWORD,
+      sessionKey: SESSION_KEY
+    });
+    const login = await app.inject({
+      method: "POST",
+      url: "/api/admin/login",
+      payload: { password: ADMIN_PASSWORD }
+    });
+    const cookie = extractCookie(login.headers as Record<string, unknown>);
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/forms",
+      headers: { cookie, "x-csrf-token": "not-the-token" },
+      payload: sampleDefinition
+    });
+    expect(res.statusCode).toBe(403);
+    expect(res.json().message).toBe("Invalid csrf token");
+  });
+
+  it("accepts mutations with a valid csrf token", async () => {
+    const app = buildApp({
+      adminPassword: ADMIN_PASSWORD,
+      sessionKey: SESSION_KEY
+    });
+    const login = await app.inject({
+      method: "POST",
+      url: "/api/admin/login",
+      payload: { password: ADMIN_PASSWORD }
+    });
+    const cookie = extractCookie(login.headers as Record<string, unknown>);
+    const csrfToken = login.json().csrfToken as string;
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/forms",
+      headers: { cookie, "x-csrf-token": csrfToken },
+      payload: sampleDefinition
+    });
+    expect(res.statusCode).toBe(503);
+    expect(res.json()).toEqual({ error: "Database not configured" });
+  });
+
+  it("admin login rate limits repeated attempts", async () => {
+    const app = buildApp({
+      adminPassword: ADMIN_PASSWORD,
+      sessionKey: SESSION_KEY
+    });
+    for (let i = 0; i < 20; i++) {
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/admin/login",
+        payload: { password: "wrong" }
+      });
+      expect(res.statusCode).toBe(401);
+    }
+    const limited = await app.inject({
+      method: "POST",
+      url: "/api/admin/login",
+      payload: { password: ADMIN_PASSWORD }
+    });
+    expect(limited.statusCode).toBe(429);
+  });
+
+  it("session endpoint issues a csrf token that validates mutations", async () => {
+    const app = buildApp({
+      adminPassword: ADMIN_PASSWORD,
+      sessionKey: SESSION_KEY
+    });
+    const login = await app.inject({
+      method: "POST",
+      url: "/api/admin/login",
+      payload: { password: ADMIN_PASSWORD }
+    });
+    const cookie = extractCookie(login.headers as Record<string, unknown>);
+
+    const session = await app.inject({
+      method: "GET",
+      url: "/api/admin/session",
+      headers: { cookie }
+    });
+    const csrfToken = session.json().csrfToken as string;
+    expect(typeof csrfToken).toBe("string");
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/forms",
+      headers: { cookie, "x-csrf-token": csrfToken },
+      payload: sampleDefinition
+    });
+    expect(res.statusCode).toBe(503);
+    expect(res.json()).toEqual({ error: "Database not configured" });
+  });
+
+  it("logout is protected by csrf too", async () => {
+    const app = buildApp({
+      adminPassword: ADMIN_PASSWORD,
+      sessionKey: SESSION_KEY
+    });
+    const login = await app.inject({
+      method: "POST",
+      url: "/api/admin/login",
+      payload: { password: ADMIN_PASSWORD }
+    });
+    const cookie = extractCookie(login.headers as Record<string, unknown>);
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/admin/logout",
+      headers: { cookie }
+    });
+    expect(res.statusCode).toBe(403);
   });
 });

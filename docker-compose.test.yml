@@ -23,6 +23,9 @@ services:
       ADMIN_PASSWORD: test-password
       SESSION_KEY: test-session-key-e2e
       PORT: 3000
+      # The whole e2e suite shares one source IP behind nginx; a tight limit
+      # would trip while teams re-run the suite within the same minute window.
+      LOGIN_RATE_LIMIT: 1000
     depends_on:
       postgres:
         condition: service_healthy

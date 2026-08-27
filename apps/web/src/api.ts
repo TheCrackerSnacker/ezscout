@@ -30,6 +30,12 @@ async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
+let csrfToken: string | null = null;
+
+function csrfHeaders(): Record<string, string> {
+  return csrfToken ? { "X-CSRF-Token": csrfToken } : {};
+}
+
 export async function getPublishedForm(formId: string): Promise<PublicForm> {
   try {
     const form = await requestJson<PublicForm>(`/api/forms/${formId}`);
@@ -87,19 +93,30 @@ export async function submitResponses(
 }
 
 export async function fetchSession(): Promise<{ authenticated: boolean }> {
-  return requestJson<{ authenticated: boolean }>("/api/admin/session");
+  const body = await requestJson<{ authenticated: boolean; csrfToken?: string }>(
+    "/api/admin/session"
+  );
+  if (body.csrfToken) csrfToken = body.csrfToken;
+  return { authenticated: body.authenticated };
 }
 
 export async function login(password: string): Promise<void> {
-  await requestJson("/api/admin/login", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ password })
-  });
+  const body = await requestJson<{ ok: boolean; csrfToken?: string }>(
+    "/api/admin/login",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password })
+    }
+  );
+  if (body.csrfToken) csrfToken = body.csrfToken;
 }
 
 export async function logout(): Promise<void> {
-  await requestJson("/api/admin/logout", { method: "POST" });
+  await requestJson("/api/admin/logout", {
+    method: "POST",
+    headers: csrfHeaders()
+  });
 }
 
 export async function fetchAdminForms(): Promise<AdminFormSummary[]> {
@@ -113,19 +130,20 @@ export async function uploadDefinition(
   definition: FormDefinition,
   targetFormId?: string
 ): Promise<{ id: string }> {
+  const csrf = csrfHeaders();
   if (targetFormId) {
     return requestJson<{ id: string }>(
       `/api/forms/${targetFormId}/definition`,
       {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...csrf },
         body: JSON.stringify(definition)
       }
     );
   }
   return requestJson<{ id: string }>("/api/forms", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...csrf },
     body: JSON.stringify(definition)
   });
 }
@@ -135,7 +153,7 @@ export async function publishForm(
 ): Promise<{ id: string; version: number }> {
   return requestJson<{ id: string; version: number }>(
     `/api/forms/${formId}/publish`,
-    { method: "POST" }
+    { method: "POST", headers: csrfHeaders() }
   );
 }
 

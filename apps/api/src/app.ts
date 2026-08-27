@@ -4,6 +4,8 @@ import Fastify, {
   type FastifyRequest
 } from "fastify";
 import secureSession from "@fastify/secure-session";
+import csrfProtection from "@fastify/csrf-protection";
+import rateLimit from "@fastify/rate-limit";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { and, desc, eq, or, type SQL } from "drizzle-orm";
 import { z } from "zod";
@@ -182,9 +184,20 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     cookie: {
       path: "/",
       maxAge: 60 * 60 * 24 * 7,
-      secure: false
+      // Prod deployments terminating TLS should set COOKIE_SECURE=true; the
+      // default keeps the plain-HTTP dev/prod stacks working.
+      secure: process.env.COOKIE_SECURE === "true",
+      sameSite: "lax"
     }
   });
+
+  const loginRateLimitMax = Number(process.env.LOGIN_RATE_LIMIT) || 20;
+  app.register(rateLimit, {
+    global: false,
+    max: loginRateLimitMax,
+    timeWindow: "1 minute"
+  });
+  app.register(csrfProtection, { sessionPlugin: "@fastify/secure-session" });
 
   const requireAdmin = async (request: FastifyRequest, reply: FastifyReply) => {
     if (!adminPassword) {
@@ -195,7 +208,33 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     }
   };
 
-  app.post("/api/admin/login", async (request, reply) => {
+  // The csrfProtection decorator is bound by the plugin during app boot, so it
+  // must be referenced lazily inside this wrapper rather than at router setup.
+  const enforceCsrf = (
+    request: FastifyRequest,
+    reply: FastifyReply,
+    done: () => void
+  ): void => {
+    app.csrfProtection(request, reply, done);
+  };
+
+  // The plugin applies limits via an onRoute hook, which runs during app boot
+  // after routes are already registered here — so attach the limiter manually.
+  let loginRateLimit:
+    | ((request: FastifyRequest, reply: FastifyReply) => Promise<unknown>)
+    | null = null;
+  const enforceLoginRateLimit = (
+    request: FastifyRequest,
+    reply: FastifyReply
+  ): Promise<unknown> => {
+    if (!loginRateLimit) loginRateLimit = app.rateLimit();
+    return loginRateLimit(request, reply);
+  };
+
+  app.post(
+    "/api/admin/login",
+    { preHandler: enforceLoginRateLimit },
+    async (request, reply) => {
     if (!adminPassword) {
       return reply.status(503).send({ error: "Admin not configured" });
     }
@@ -209,18 +248,22 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       return reply.status(401).send({ error: "Invalid credentials" });
     }
     request.session.set("role", "admin");
-    return { ok: true };
+    return { ok: true, csrfToken: reply.generateCsrf() };
   });
 
-  app.post("/api/admin/logout", async (request) => {
+  app.post("/api/admin/logout", { preHandler: enforceCsrf }, async (request) => {
     request.session.delete();
     return { ok: true };
   });
 
-  app.get("/api/admin/session", async (request) => ({
-    authenticated:
-      Boolean(adminPassword) && request.session.get("role") === "admin"
-  }));
+  app.get("/api/admin/session", async (request, reply) => {
+    const authenticated =
+      Boolean(adminPassword) && request.session.get("role") === "admin";
+    return {
+      authenticated,
+      ...(authenticated ? { csrfToken: reply.generateCsrf() } : {})
+    };
+  });
 
   const requireDb = (reply: { status: (code: number) => { send: (body: unknown) => unknown } }) => {
     if (db) return db;
@@ -277,7 +320,10 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     }
   );
 
-  app.post("/api/forms", { preHandler: requireAdmin }, async (request, reply) => {
+  app.post(
+    "/api/forms",
+    { preHandler: [requireAdmin, enforceCsrf] },
+    async (request, reply) => {
     const handle = requireDb(reply);
     if (!handle) return;
 
@@ -299,7 +345,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
 
   app.post(
     "/api/forms/:id/publish",
-    { preHandler: requireAdmin },
+    { preHandler: [requireAdmin, enforceCsrf] },
     async (request, reply) => {
     const handle = requireDb(reply);
     if (!handle) return;
@@ -335,7 +381,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
 
   app.put(
     "/api/forms/:id/definition",
-    { preHandler: requireAdmin },
+    { preHandler: [requireAdmin, enforceCsrf] },
     async (request, reply) => {
       const handle = requireDb(reply);
       if (!handle) return;

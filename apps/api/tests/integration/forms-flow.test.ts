@@ -49,10 +49,12 @@ suite("forms + responses integration", () => {
   let pool: Pool | undefined;
   let app: FastifyInstance;
   let adminCookie: string;
+  let adminCsrf: string;
 
   const asAdmin = (headers: Record<string, string> = {}) => ({
     ...headers,
-    cookie: adminCookie
+    cookie: adminCookie,
+    "x-csrf-token": adminCsrf
   });
 
   const createForm = (payload: object) =>
@@ -89,6 +91,7 @@ suite("forms + responses integration", () => {
 
     const loginResult = await login(ADMIN_PASSWORD);
     expect(loginResult.statusCode).toBe(200);
+    adminCsrf = loginResult.json().csrfToken as string;
     // Echo the raw Set-Cookie pair: the signed value contains encoded
     // separators, so reparsing via response.cookies corrupts it.
     const setCookie = loginResult.headers["set-cookie"];
@@ -119,7 +122,7 @@ suite("forms + responses integration", () => {
 
     const right = await login(ADMIN_PASSWORD);
     expect(right.statusCode).toBe(200);
-    expect(right.json()).toEqual({ ok: true });
+    expect(right.json().ok).toBe(true);
   });
 
   it("returns 503 when the admin password is not configured", async () => {
