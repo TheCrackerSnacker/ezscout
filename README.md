@@ -78,6 +78,7 @@ Copy `.env.example` to `.env`. All variables have sensible dev defaults.
 | `SESSION_KEY` | Secret for signed session cookies (min 32 chars) | `dev-session-key-please-change-me-32+` (dev) |
 | `COOKIE_SECURE` | Set `true` when the API is served behind TLS | `false` |
 | `LOGIN_RATE_LIMIT` | Max admin login attempts per minute per IP | `20` |
+| `RESPONSES_RATE_LIMIT` | Max anonymous submission batches per minute per IP | `300` |
 
 ## Architecture
 
@@ -99,10 +100,11 @@ The web app works offline via a service worker (Workbox), IndexedDB outbox (Dexi
 2. A pending count badge appears in the nav
 3. On reconnection (or every 5s), the outbox drains to `POST /api/responses`
 4. Entries older than 6 hours are dropped; failed entries use exponential backoff (max 10 retries)
+5. Entries given up on (max retries) or expired by the TTL are archived to a visible "couldn't be sent" notice in the nav with a dismiss control
 
 ### Admin auth
 
-All admin routes are protected by a single `ADMIN_PASSWORD`. The session is a signed cookie (`@fastify/secure-session`). Unset password keeps admin routes fail-closed (503). Login is rate-limited (20 attempts/min). Admin mutations also require a CSRF token (issued at login/session, echoed in the `X-CSRF-Token` header) — defense in depth on top of the cookie's `SameSite=Lax`.
+All admin routes are protected by a single `ADMIN_PASSWORD`. The session is a signed cookie (`@fastify/secure-session`). Unset password keeps admin routes fail-closed (503). Login is rate-limited (`LOGIN_RATE_LIMIT`, 20/min by default) and the anonymous submission endpoint has its own coarse limit (`RESPONSES_RATE_LIMIT`, 300/min). Admin mutations also require a CSRF token (issued at login/session, echoed in the `X-CSRF-Token` header) — defense in depth on top of the cookie's `SameSite=Lax`. Rate limits are keyed per client IP: the API runs `trustProxy: 1` and the prod nginx overwrites `X-Forwarded-For` with the real client address so a spoofed header can't open a fresh bucket.
 
 ## Testing
 

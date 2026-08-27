@@ -1,4 +1,4 @@
-import { db } from "./db";
+import { db, type DroppedEntry, type OutboxEntry } from "./db";
 
 const MAX_RETRIES = 10;
 const BASE_INTERVAL_MS = 5_000;
@@ -30,6 +30,7 @@ export async function drainOutbox(): Promise<void> {
     const now = Date.now();
     const stale = entries.filter((e) => now - e.createdAt > TTL_MS);
     if (stale.length > 0) {
+      await archiveDropped(stale, "expired");
       await db.outbox.bulkDelete(stale.map((e) => e.id));
     }
 
@@ -100,16 +101,16 @@ export async function drainOutbox(): Promise<void> {
   }
 }
 
-async function incrementRetries(entries: { id: string; retryCount: number }[]) {
+async function incrementRetries(entries: OutboxEntry[]) {
   const now = Date.now();
-  const maxRetries: string[] = [];
+  const maxRetries: OutboxEntry[] = [];
   const updates: { id: string; retryCount: number; lastAttemptAt: number }[] =
     [];
 
   for (const entry of entries) {
     const next = entry.retryCount + 1;
     if (next > MAX_RETRIES) {
-      maxRetries.push(entry.id);
+      maxRetries.push(entry);
     } else {
       updates.push({ id: entry.id, retryCount: next, lastAttemptAt: now });
     }
@@ -124,13 +125,31 @@ async function incrementRetries(entries: { id: string; retryCount: number }[]) {
 
   if (maxRetries.length > 0) {
     console.warn(
-      `[ezscout] Dropping ${maxRetries.length} outbox entries after ${MAX_RETRIES} failed retries`
+      `[ezscout] Archiving ${maxRetries.length} outbox entries after ${MAX_RETRIES} failed retries`
     );
-    await db.outbox.bulkDelete(maxRetries);
+    await archiveDropped(maxRetries, "max_retries");
+    await db.outbox.bulkDelete(maxRetries.map((e) => e.id));
   }
 
   const worstRetry = Math.max(0, ...updates.map((u) => u.retryCount));
   nextAttemptAt = now + computeBackoff(worstRetry);
+}
+
+async function archiveDropped(
+  entries: OutboxEntry[],
+  reason: DroppedEntry["reason"]
+): Promise<void> {
+  const droppedAt = Date.now();
+  const archived: DroppedEntry[] = entries.map((entry) => ({
+    id: entry.id,
+    formId: entry.formId,
+    formVersion: entry.formVersion,
+    answers: entry.answers,
+    submittedAt: entry.submittedAt,
+    droppedAt,
+    reason
+  }));
+  await db.dropped.bulkAdd(archived);
 }
 
 export function startSyncListener(): void {
@@ -148,4 +167,12 @@ export function startSyncListener(): void {
 
 export function getOutboxCount(): Promise<number> {
   return db.outbox.count();
+}
+
+export function getDroppedCount(): Promise<number> {
+  return db.dropped.count();
+}
+
+export function clearDropped(): Promise<void> {
+  return db.dropped.clear();
 }

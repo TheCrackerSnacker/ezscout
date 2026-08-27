@@ -1,4 +1,5 @@
 import Fastify, {
+  type FastifyError,
   type FastifyInstance,
   type FastifyReply,
   type FastifyRequest
@@ -169,7 +170,7 @@ function defaultDb(): Db | null {
 }
 
 export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
-  const app = Fastify({ logger: false });
+  const app = Fastify({ logger: false, trustProxy: true });
   const db = options.db ?? defaultDb();
 
   const adminPassword = options.adminPassword ?? process.env.ADMIN_PASSWORD;
@@ -193,12 +194,30 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   });
 
   const loginRateLimitMax = Number(process.env.LOGIN_RATE_LIMIT) || 20;
+  // The anonymous submission endpoint is a cheap abuse surface (each batch can
+  // trigger up to BATCH_LIMIT inserts), so it gets its own coarse per-IP limit.
+  const responsesRateLimitMax = Number(process.env.RESPONSES_RATE_LIMIT) || 300;
   app.register(rateLimit, {
     global: false,
     max: loginRateLimitMax,
     timeWindow: "1 minute"
   });
   app.register(csrfProtection, { sessionPlugin: "@fastify/secure-session" });
+
+  // Every error response uses the same `{ error: string }` envelope so clients
+  // can rely on one body shape (Fastify's default emits `message` instead).
+  app.setNotFoundHandler((_request, reply) => {
+    reply.status(404).send({ error: "Not found" });
+  });
+  app.setErrorHandler<FastifyError>((error, _request, reply) => {
+    const statusCode =
+      typeof error.statusCode === "number" && error.statusCode >= 400
+        ? error.statusCode
+        : 500;
+    reply
+      .status(statusCode)
+      .send({ error: error.message || "Internal Server Error" });
+  });
 
   const requireAdmin = async (request: FastifyRequest, reply: FastifyReply) => {
     if (!adminPassword) {
@@ -230,6 +249,22 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   ): Promise<unknown> => {
     if (!loginRateLimit) loginRateLimit = app.rateLimit();
     return loginRateLimit(request, reply);
+  };
+
+  let responsesRateLimit:
+    | ((request: FastifyRequest, reply: FastifyReply) => Promise<unknown>)
+    | null = null;
+  const enforceResponsesRateLimit = (
+    request: FastifyRequest,
+    reply: FastifyReply
+  ): Promise<unknown> => {
+    if (!responsesRateLimit) {
+      responsesRateLimit = app.rateLimit({
+        max: responsesRateLimitMax,
+        timeWindow: "1 minute"
+      });
+    }
+    return responsesRateLimit(request, reply);
   };
 
   app.post(
@@ -450,10 +485,23 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       return reply.status(500).send({ error: "Stored form definition is invalid" });
     }
 
+    const etag = `W/"${row.snapshotVersion}-${id}"`;
+    reply.header("etag", etag);
+    reply.header("cache-control", "public, max-age=0");
+
+    const ifNoneMatch = request.headers["if-none-match"];
+    const candidates = typeof ifNoneMatch === "string" ? [ifNoneMatch] : ifNoneMatch ?? [];
+    if (candidates.includes(etag)) {
+      return reply.status(304).send();
+    }
+
     return result.data;
   });
 
-  app.post("/api/responses", async (request, reply) => {
+  app.post(
+    "/api/responses",
+    { preHandler: enforceResponsesRateLimit },
+    async (request, reply) => {
     const handle = requireDb(reply);
     if (!handle) return;
 

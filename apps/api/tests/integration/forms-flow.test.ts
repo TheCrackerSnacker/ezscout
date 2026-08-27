@@ -191,6 +191,48 @@ suite("forms + responses integration", () => {
     expect(body.questions).toHaveLength(1);
   });
 
+  it("serves cache headers and honours If-None-Match", async () => {
+    const created = await createForm(sampleDefinition());
+    const formId = created.json().id;
+    await publishForm(formId);
+
+    const first = await app.inject({
+      method: "GET",
+      url: `/api/forms/${formId}`
+    });
+    expect(first.statusCode).toBe(200);
+    const etag = String(first.headers.etag);
+    expect(etag).toMatch(/^W\/"/);
+    expect(first.headers["cache-control"]).toBe("public, max-age=0");
+
+    const revalidated = await app.inject({
+      method: "GET",
+      url: `/api/forms/${formId}`,
+      headers: { "if-none-match": etag }
+    });
+    expect(revalidated.statusCode).toBe(304);
+    expect(revalidated.headers.etag).toBe(etag);
+    expect(revalidated.body).toBe("");
+
+    const unmatched = await app.inject({
+      method: "GET",
+      url: `/api/forms/${formId}`,
+      headers: { "if-none-match": '"garbage"' }
+    });
+    expect(unmatched.statusCode).toBe(200);
+
+    const republished = await publishForm(formId);
+    expect(republished.json().version).toBe(2);
+
+    const afterRepublish = await app.inject({
+      method: "GET",
+      url: `/api/forms/${formId}`,
+      headers: { "if-none-match": etag }
+    });
+    expect(afterRepublish.statusCode).toBe(200);
+    expect(String(afterRepublish.headers.etag)).not.toBe(etag);
+  });
+
   it("bumps the version on each publish", async () => {
     const created = await createForm(sampleDefinition());
     const formId = created.json().id;

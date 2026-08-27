@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { OutboxEntry } from "../src/offline/db";
+import type { DroppedEntry, OutboxEntry } from "../src/offline/db";
 
 type SyncModule = typeof import("../src/offline/sync");
 type DbModule = typeof import("../src/offline/db");
@@ -14,6 +14,13 @@ interface FakeOutbox {
   bulkDelete(ids: string[]): Promise<void>;
   bulkPut(entries: OutboxEntry[]): Promise<void>;
   count(): Promise<number>;
+}
+
+interface FakeDropped {
+  entries: DroppedEntry[];
+  bulkAdd(entries: DroppedEntry[]): Promise<void>;
+  count(): Promise<number>;
+  clear(): Promise<void>;
 }
 
 function makeEntry(overrides: Partial<OutboxEntry> = {}): OutboxEntry {
@@ -32,6 +39,7 @@ function makeEntry(overrides: Partial<OutboxEntry> = {}): OutboxEntry {
 
 function createFakeDb(): DbModule["db"] {
   const entries: OutboxEntry[] = [];
+  const droppedStore: DroppedEntry[] = [];
   const outbox: FakeOutbox = {
     entries,
     orderBy(key: string) {
@@ -61,8 +69,21 @@ function createFakeDb(): DbModule["db"] {
       return entries.length;
     }
   };
+  const dropped: FakeDropped = {
+    entries: droppedStore,
+    async bulkAdd(items: DroppedEntry[]) {
+      droppedStore.push(...items);
+    },
+    async count() {
+      return droppedStore.length;
+    },
+    async clear() {
+      droppedStore.length = 0;
+    }
+  };
   return {
     outbox: outbox as unknown as DbModule["db"]["outbox"],
+    dropped: dropped as unknown as DbModule["db"]["dropped"],
     forms: {
       put: vi.fn(),
       get: vi.fn()
@@ -73,6 +94,7 @@ function createFakeDb(): DbModule["db"] {
 let sync: SyncModule;
 let db: DbModule["db"];
 let outbox: FakeOutbox;
+let dropped: FakeDropped;
 let fetchMock: ReturnType<typeof vi.fn>;
 let online: boolean;
 
@@ -90,6 +112,7 @@ describe("offline sync", () => {
     vi.doMock("../src/offline/db", () => ({ db: createFakeDb() }));
     db = (await import("../src/offline/db")).db;
     outbox = (db.outbox as unknown as FakeOutbox);
+    dropped = (db.dropped as unknown as FakeDropped);
     sync = await import("../src/offline/sync");
     setOnline(true);
     fetchMock = vi.fn();
@@ -133,15 +156,23 @@ describe("offline sync", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("drops entries older than the six-hour TTL", async () => {
-    await outbox.bulkAdd([
-      makeEntry({ createdAt: Date.now() - TTL_MS - 1_000 })
-    ]);
+  it("archives entries older than the six-hour TTL as expired", async () => {
+    const entry = makeEntry({ createdAt: Date.now() - TTL_MS - 1_000 });
+    await outbox.bulkAdd([entry]);
 
     await sync.drainOutbox();
 
     expect(await outbox.count()).toBe(0);
     expect(fetchMock).not.toHaveBeenCalled();
+    expect(dropped.entries).toHaveLength(1);
+    expect(dropped.entries[0]).toMatchObject({
+      id: entry.id,
+      formId: entry.formId,
+      formVersion: entry.formVersion,
+      answers: entry.answers,
+      submittedAt: entry.submittedAt,
+      reason: "expired"
+    });
   });
 
   it("posts fresh entries and removes accepted ones", async () => {
@@ -228,7 +259,7 @@ describe("offline sync", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("drops an entry once it exceeds the max retry count", async () => {
+  it("archives an entry once it exceeds the max retry count", async () => {
     const entry = makeEntry({ retryCount: MAX_RETRIES });
     await outbox.bulkAdd([entry]);
     fetchMock.mockResolvedValue(new Response("", { status: 500 }));
@@ -236,6 +267,12 @@ describe("offline sync", () => {
     await sync.drainOutbox();
 
     expect(await outbox.count()).toBe(0);
+    expect(dropped.entries).toHaveLength(1);
+    expect(dropped.entries[0]).toMatchObject({
+      id: entry.id,
+      reason: "max_retries"
+    });
+    expect(dropped.entries[0]!.droppedAt).toBeGreaterThan(0);
   });
 
   it("increments the retry counter on network failures", async () => {
@@ -254,5 +291,19 @@ describe("offline sync", () => {
     await outbox.bulkAdd([makeEntry(), makeEntry()]);
 
     expect(await sync.getOutboxCount()).toBe(2);
+  });
+
+  it("reports and clears the number of archived entries", async () => {
+    await outbox.bulkAdd([makeEntry({ retryCount: MAX_RETRIES })]);
+    fetchMock.mockResolvedValue(new Response("", { status: 500 }));
+
+    await sync.drainOutbox();
+
+    expect(await sync.getDroppedCount()).toBe(1);
+
+    await sync.clearDropped();
+
+    expect(await sync.getDroppedCount()).toBe(0);
+    expect(await outbox.count()).toBe(0);
   });
 });

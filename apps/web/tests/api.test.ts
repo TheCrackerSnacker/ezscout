@@ -254,4 +254,47 @@ describe("api client", () => {
       );
     });
   });
+
+  describe("ApiError detail", () => {
+    it("surfaces the server error message from the body", async () => {
+      fetchMock.mockResolvedValue(
+        new Response(
+          JSON.stringify({ error: "Rate limit exceeded, retry in 1 minute" }),
+          { status: 429 }
+        )
+      );
+
+      const error = await login("secret").catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(ApiError);
+      expect((error as ApiError).status).toBe(429);
+      expect((error as ApiError).detail).toBe(
+        "Rate limit exceeded, retry in 1 minute"
+      );
+      expect((error as ApiError).message).toBe(
+        "Rate limit exceeded, retry in 1 minute"
+      );
+    });
+
+    it("falls back to the message field when error is absent", async () => {
+      fetchMock.mockResolvedValue(
+        new Response(JSON.stringify({ message: "nope" }), { status: 400 })
+      );
+
+      const error = await login("secret").catch((caught: unknown) => caught);
+
+      expect((error as ApiError).status).toBe(400);
+      expect((error as ApiError).detail).toBe("nope");
+    });
+
+    it("keeps the generic message when the body is not JSON", async () => {
+      fetchMock.mockResolvedValue(new Response("", { status: 500 }));
+
+      const error = await login("secret").catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(ApiError);
+      expect((error as ApiError).message).toBe("Request failed (500)");
+      expect((error as ApiError).detail).toBeNull();
+    });
+  });
 });

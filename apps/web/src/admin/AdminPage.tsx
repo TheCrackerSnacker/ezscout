@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { fetchSession, login, logout } from "../api";
+import { ApiError, fetchSession, login, logout } from "../api";
 import type { Route } from "../router";
 import { Link } from "../router";
 import { FormEditorPage } from "./FormEditorPage";
@@ -12,17 +12,24 @@ type AuthState =
 
 function LoginCard({ onSuccess }: { onSuccess: () => void }) {
   const [password, setPassword] = useState("");
-  const [error, setError] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const handleSubmit = async () => {
     setBusy(true);
-    setError(false);
+    setError(null);
     try {
       await login(password);
       onSuccess();
-    } catch {
-      setError(true);
+    } catch (caught) {
+      setError(
+        caught instanceof ApiError &&
+          caught.status !== 401 &&
+          caught.status !== 403 &&
+          caught.detail
+          ? `Sign-in failed. ${caught.detail}`
+          : "Sign-in failed. Check the admin password."
+      );
     } finally {
       setBusy(false);
     }
@@ -46,9 +53,7 @@ function LoginCard({ onSuccess }: { onSuccess: () => void }) {
       <button type="submit" disabled={busy || password === ""}>
         {busy ? "Signing in…" : "Sign in"}
       </button>
-      {error ? (
-        <p role="alert">Sign-in failed. Check the admin password.</p>
-      ) : null}
+      {error ? <p role="alert">{error}</p> : null}
     </form>
   );
 }

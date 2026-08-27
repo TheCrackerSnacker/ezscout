@@ -9,10 +9,12 @@ import { db } from "./offline/db";
 
 export class ApiError extends Error {
   readonly status: number;
+  readonly detail: string | null;
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, detail: string | null = null) {
     super(message);
     this.status = status;
+    this.detail = detail;
   }
 }
 
@@ -23,10 +25,28 @@ export interface AdminFormSummary {
   updatedAt: string;
 }
 
+async function apiErrorFrom(response: Response): Promise<ApiError> {
+  try {
+    const body = (await response.json()) as {
+      error?: unknown;
+      message?: unknown;
+    };
+    if (typeof body.error === "string" && body.error) {
+      return new ApiError(response.status, body.error, body.error);
+    }
+    if (typeof body.message === "string" && body.message) {
+      return new ApiError(response.status, body.message, body.message);
+    }
+  } catch {
+    // Non-JSON error body; fall through to the generic message.
+  }
+  return new ApiError(response.status, `Request failed (${response.status})`);
+}
+
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init);
   if (!response.ok) {
-    throw new ApiError(response.status, `Request failed (${response.status})`);
+    throw await apiErrorFrom(response);
   }
   return (await response.json()) as T;
 }
@@ -41,7 +61,7 @@ export async function getPublishedForm(formId: string): Promise<PublicForm> {
   try {
     const response = await fetch(`/api/forms/${formId}`);
     if (!response.ok) {
-      throw new ApiError(response.status, `Request failed (${response.status})`);
+      throw await apiErrorFrom(response);
     }
     const form = PublicFormSchema.parse(await response.json());
     await db.forms.put({

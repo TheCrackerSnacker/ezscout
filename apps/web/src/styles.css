@@ -457,6 +457,21 @@ small,
   margin-left: 0.35rem;
 }
 
+.offline-indicator--lost {
+  color: var(--error-text);
+}
+
+.offline-indicator-dismiss {
+  margin-left: 0.4rem;
+  padding: 0 0.3rem;
+  font-size: 0.75rem;
+  border: 1px solid currentColor;
+  border-radius: var(--radius);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
 /* queued confirmation */
 [role="status"].queued {
   background: var(--warning-bg);

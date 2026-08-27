@@ -187,7 +187,7 @@ describe("CSRF protection", () => {
       payload: sampleDefinition
     });
     expect(res.statusCode).toBe(403);
-    expect(res.json().message).toBe("Invalid csrf token");
+    expect(res.json()).toEqual({ error: "Invalid csrf token" });
   });
 
   it("rejects mutations with a wrong csrf token", async () => {
@@ -209,7 +209,7 @@ describe("CSRF protection", () => {
       payload: sampleDefinition
     });
     expect(res.statusCode).toBe(403);
-    expect(res.json().message).toBe("Invalid csrf token");
+    expect(res.json()).toEqual({ error: "Invalid csrf token" });
   });
 
   it("accepts mutations with a valid csrf token", async () => {
