@@ -23,16 +23,7 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ["**/*.{js,css,html,ico,png,svg}"],
-        runtimeCaching: [
-          {
-            urlPattern: /\/api\/forms\/.*/i,
-            handler: "NetworkFirst",
-            options: {
-              cacheName: "form-cache",
-              expiration: { maxEntries: 50, maxAgeSeconds: 60 * 60 * 24 * 7 }
-            }
-          }
-        ]
+        cleanupOutdatedCaches: true
       }
     })
   ],

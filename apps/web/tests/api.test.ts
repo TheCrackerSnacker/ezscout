@@ -11,12 +11,14 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Submission } from "@ezscout/shared";
 
-vi.mock("../src/offline/db", () => ({
+const dbMocks = vi.hoisted(() => ({
   db: {
     forms: { put: vi.fn(), get: vi.fn() },
     outbox: { bulkAdd: vi.fn(), count: vi.fn().mockResolvedValue(0) }
   }
 }));
+
+vi.mock("../src/offline/db", () => dbMocks);
 
 const publishedForm = {
   id: "0198f7a2-7b3c-7000-8000-3b9ac95e4a01",
@@ -34,9 +36,21 @@ const publishedForm = {
 
 describe("api client", () => {
   const fetchMock = vi.fn();
+  let online = true;
+
+  const setOnline = (value: boolean) => {
+    online = value;
+    Object.defineProperty(navigator, "onLine", {
+      configurable: true,
+      get: () => online
+    });
+  };
 
   beforeEach(() => {
     vi.stubGlobal("fetch", fetchMock);
+    setOnline(true);
+    dbMocks.db.forms.get.mockReset();
+    dbMocks.db.forms.put.mockReset();
   });
 
   afterEach(() => {
@@ -54,7 +68,39 @@ describe("api client", () => {
 
       expect(form.title).toBe("Published form");
       expect(form.questions).toHaveLength(1);
+      expect(dbMocks.db.forms.put).toHaveBeenCalledWith({
+        id: publishedForm.id,
+        definition: publishedForm,
+        fetchedAt: expect.any(Number) as number
+      });
       expect(fetchMock).toHaveBeenCalledWith(`/api/forms/${publishedForm.id}`);
+    });
+
+    it("serves the cached snapshot from Dexie when offline", async () => {
+      setOnline(false);
+      fetchMock.mockRejectedValue(new TypeError("network down"));
+      dbMocks.db.forms.get.mockResolvedValue({
+        id: publishedForm.id,
+        definition: publishedForm,
+        fetchedAt: 1
+      });
+
+      const form = await getPublishedForm(publishedForm.id);
+
+      expect(form).toEqual(publishedForm);
+      expect(dbMocks.db.forms.put).not.toHaveBeenCalled();
+    });
+
+    it("re-throws when offline and nothing is cached", async () => {
+      setOnline(false);
+      fetchMock.mockRejectedValue(new TypeError("network down"));
+      dbMocks.db.forms.get.mockResolvedValue(undefined);
+
+      const error = await getPublishedForm(publishedForm.id).catch(
+        (caught: unknown) => caught
+      );
+
+      expect(error).toBeInstanceOf(TypeError);
     });
 
     it("throws an ApiError carrying the status on failure", async () => {

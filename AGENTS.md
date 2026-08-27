@@ -36,6 +36,7 @@ Ports: web 5173 · api 3000 · prod nginx 8080 · postgres 5432 (dev) / 5433 (in
 - **Response endpoint contract:** `POST /api/responses` is envelope-only: `{ responses: [...] }` (1–100 items, `BATCH_LIMIT` in shared) → HTTP 200 `{ results: [{ index, id?, status: "accepted" | "duplicate" | "rejected", reason?, issues? }] }`. Per-item problems are `rejected` entries (`invalid_payload`, `unknown_form_version`, `validation_failed`); only malformed envelopes get 400. Idempotency comes from the client-generated UUID primary key + `ON CONFLICT DO NOTHING`; a single submission is just a batch of size 1 (one shared `processSubmissions` core).
 - **Admin surface is auth-gated and fail-closed.** All mutations (`POST /api/forms`, `/publish`, `PUT /api/forms/:id/definition`) plus `/api/admin/*` require a signed session cookie minted by `POST /api/admin/login` against the single `ADMIN_PASSWORD` env. Unset password → login 503, mutations 401/503; never weaken this for tests — integration tests inject credentials via `buildApp` options instead.
 - Public GET contract is codified as `PublicFormSchema` in shared; API and web must parse through it.
+- **Client-side form caching is Dexie/IndexedDB-only.** The service worker (vite-plugin-pwa/Workbox) precaches the app shell but must not runtime-cache API responses — `apps/web/vite.config.ts` has no `runtimeCaching` block. Never re-add a Workbox rule for `/api/forms/*`; it duplicates the version-aware Dexie cache (`offline/db.ts`) and can mask the offline path.
 
 ## Environment quirks
 
