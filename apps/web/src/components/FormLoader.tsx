@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { PublicForm, Submission } from "@ezscout/shared";
 import { ApiError, getPublishedForm, submitResponses } from "../api";
+import { randomUUID } from "../uuid";
 import { Link } from "../router";
 import { FormView } from "./FormView";
 
@@ -54,7 +55,7 @@ export function FormLoader({ formId }: { formId: string }) {
       definition={state.form}
       onValidSubmit={async (answers) => {
         const submission: Submission = {
-          id: crypto.randomUUID(),
+          id: randomUUID(),
           formId,
           formVersion: state.form.version,
           answers

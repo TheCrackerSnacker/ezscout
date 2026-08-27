@@ -170,7 +170,7 @@ function defaultDb(): Db | null {
 }
 
 export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
-  const app = Fastify({ logger: false, trustProxy: true });
+  const app = Fastify({ logger: true, trustProxy: true });
   const db = options.db ?? defaultDb();
 
   const adminPassword = options.adminPassword ?? process.env.ADMIN_PASSWORD;
