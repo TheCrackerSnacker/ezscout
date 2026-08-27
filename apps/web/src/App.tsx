@@ -40,8 +40,6 @@ export default function App() {
     }
   };
 
-  const atHome = route.page === "home";
-
   return (
     <div className="app">
       <header className="top-bar">
@@ -73,12 +71,12 @@ export default function App() {
         </div>
       </header>
 
-      <nav className="menu">
-        <div className="menu-inner">
-          {atHome ? null : <Link to="/">Home</Link>}
-          {auth === "in" ? <Link to="/admin">Manage Forms</Link> : null}
-        </div>
-      </nav>
+<nav className="menu">
+          <div className="menu-inner">
+            <Link to="/">Home</Link>
+            {auth === "in" ? <Link to="/admin">Manage Forms</Link> : null}
+          </div>
+        </nav>
 
       {auth === "checking" ? (
         <main>
