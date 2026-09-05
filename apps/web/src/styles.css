@@ -28,6 +28,7 @@
   --radius: 6px;
   --shadow: 0 1px 4px rgba(0, 0, 0, 0.06), 0 0 0 1px rgba(0, 0, 0, 0.03);
   --max-w: 660px;
+  --widget-margin: 40px;
 }
 
 html {
@@ -41,6 +42,7 @@ html {
 
 /* ── Layout ─────────────────────────────────────────────── */
 main {
+  width: 100%;
   max-width: var(--max-w);
   margin: 2rem auto;
   padding: 0 1.25rem;
@@ -163,6 +165,27 @@ a:hover {
   box-shadow: var(--shadow);
   padding: 1.5rem 1.75rem;
   margin-bottom: 1.25rem;
+  width: calc(100% - var(--widget-margin));
+  margin-inline: auto;
+}
+
+.forms-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.forms-list .card {
+  margin-bottom: 0;
+}
+
+.forms-list .description {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ── Forms (question wrapper) ───────────────────────────── */
@@ -171,6 +194,8 @@ form {
   border-radius: var(--radius);
   box-shadow: var(--shadow);
   padding: 1.75rem 2rem 2rem;
+  width: calc(100% - var(--widget-margin));
+  margin-inline: auto;
 }
 
 form h2 {
@@ -370,10 +395,6 @@ ul[role="alert"] {
 }
 
 /* ── Admin page ─────────────────────────────────────────── */
-.admin-login {
-  max-width: 340px;
-}
-
 .admin-login h2 {
   margin-bottom: 0.5rem;
 }
@@ -409,9 +430,17 @@ ul[role="alert"] {
   flex-wrap: wrap;
 }
 
+.uploader .row > * {
+  min-width: 0;
+}
+
 .uploader .row > select,
 .uploader .row > label {
   font-size: 0.9rem;
+}
+
+.uploader .row > select {
+  max-width: 100%;
 }
 
 .uploader .preview {

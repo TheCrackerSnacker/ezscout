@@ -8,11 +8,12 @@ import secureSession from "@fastify/secure-session";
 import csrfProtection from "@fastify/csrf-protection";
 import rateLimit from "@fastify/rate-limit";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { and, desc, eq, or, type SQL } from "drizzle-orm";
+import { and, desc, eq, isNotNull, or, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import {
   FormDefinitionSchema,
   PublicFormSchema,
+  PublicFormSummarySchema,
   SubmissionBatchEnvelopeSchema,
   SubmissionSchema,
   validateAnswers,
@@ -447,6 +448,44 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
       return { id: updated.id };
     }
   );
+
+  app.get("/api/forms", async (request, reply) => {
+    const handle = requireDb(reply);
+    if (!handle) return;
+
+    const rows = await handle
+      .select({
+        id: forms.id,
+        definition: forms.definition,
+        version: formVersions.version,
+        publishedAt: formVersions.publishedAt
+      })
+      .from(forms)
+      .innerJoin(
+        formVersions,
+        and(
+          eq(formVersions.formId, forms.id),
+          eq(formVersions.version, forms.publishedVersion!)
+        )
+      )
+      .where(isNotNull(forms.publishedVersion))
+      .orderBy(desc(formVersions.publishedAt));
+
+    const summaries = rows.flatMap((row) => {
+      const parsed = FormDefinitionSchema.safeParse(row.definition);
+      if (!parsed.success) return [];
+      const result = PublicFormSummarySchema.safeParse({
+        id: row.id,
+        title: parsed.data.title,
+        description: parsed.data.description,
+        version: row.version,
+        publishedAt: row.publishedAt instanceof Date ? row.publishedAt.toISOString() : String(row.publishedAt)
+      });
+      return result.success ? [result.data] : [];
+    });
+
+    return { forms: summaries };
+  });
 
   app.get("/api/forms/:id", async (request, reply) => {
     const handle = requireDb(reply);

@@ -9,7 +9,7 @@ import { buildApp } from "../../src/app";
 import { createDb, type Db } from "../../src/db/client";
 import { responses } from "../../src/db/schema";
 import { runMigrations } from "../../src/db/migrator";
-import { PublicFormSchema } from "@ezscout/shared";
+import { PublicFormListSchema, PublicFormSchema } from "@ezscout/shared";
 
 const QUESTION_ID = "22222222-2222-4222-8222-222222222222";
 const ADMIN_PASSWORD = "test-admin-password";
@@ -295,6 +295,38 @@ suite("forms + responses integration", () => {
       headers: asAdmin()
     });
     expect(missingForm.statusCode).toBe(404);
+  });
+
+  it("lists published forms publicly and excludes drafts", async () => {
+    const publishedId = (await createForm(sampleDefinition())).json().id as string;
+    await publishForm(publishedId);
+    const draftId = (await createForm({
+      title: "Draft only",
+      questions: [
+        {
+          id: QUESTION_ID,
+          type: "radio",
+          question: "WIP?",
+          options: ["Yes", "No"],
+          required: true
+        }
+      ]
+    })).json().id as string;
+
+    const listed = await app.inject({ method: "GET", url: "/api/forms" });
+    expect(listed.statusCode).toBe(200);
+    const body = PublicFormListSchema.parse(listed.json());
+
+    const published = body.forms.find((row) => row.id === publishedId);
+    expect(published).toBeTruthy();
+    expect(published?.title).toBe("Integration form");
+    expect(published?.version).toBe(1);
+    expect(typeof published?.publishedAt).toBe("string");
+
+    expect(body.forms.some((row) => row.id === draftId)).toBe(false);
+    expect(new Set(body.forms.map((row) => row.id)).size).toBe(
+      body.forms.length
+    );
   });
 
   it("lists existing forms for the admin", async () => {

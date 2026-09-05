@@ -1,10 +1,11 @@
 import type {
   FormDefinition,
   PublicForm,
+  PublicFormSummary,
   Submission,
   SubmissionBatchResult
 } from "@ezscout/shared";
-import { PublicFormSchema } from "@ezscout/shared";
+import { PublicFormListSchema, PublicFormSchema } from "@ezscout/shared";
 import { db } from "./offline/db";
 
 export class ApiError extends Error {
@@ -75,6 +76,26 @@ export async function getPublishedForm(formId: string): Promise<PublicForm> {
     const cached = await db.forms.get(formId);
     if (cached) return cached.definition;
     throw error;
+  }
+}
+
+export async function fetchPublicForms(): Promise<PublicFormSummary[]> {
+  try {
+    const body = PublicFormListSchema.parse(
+      await requestJson<unknown>("/api/forms")
+    );
+    return body.forms;
+  } catch (error) {
+    if (navigator.onLine) throw error;
+    const cached = await db.forms.toArray();
+    return cached
+      .map(({ id, definition }) => ({
+        id,
+        title: definition.title,
+        description: definition.description,
+        version: definition.version
+      }))
+      .sort((a, b) => b.version - a.version);
   }
 }
 

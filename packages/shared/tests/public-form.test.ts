@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { PublicFormSchema } from "../src/public-form";
+import {
+  PublicFormListSchema,
+  PublicFormSchema,
+  PublicFormSummarySchema
+} from "../src/public-form";
 
 const validPublicForm = {
   id: "0198f7a2-7b3c-7000-8000-3b9ac95e4a01",
@@ -45,5 +49,46 @@ describe("PublicFormSchema", () => {
   it("rejects a missing id", () => {
     const { id: _omitted, ...withoutId } = validPublicForm;
     expect(PublicFormSchema.safeParse(withoutId).success).toBe(false);
+  });
+});
+
+const validSummary = {
+  id: "0198f7a2-7b3c-7000-8000-3b9ac95e4a01",
+  title: "Published form",
+  version: 2
+};
+
+describe("PublicFormSummarySchema", () => {
+  it("accepts the API GET /api/forms list shape", () => {
+    expect(PublicFormSummarySchema.safeParse(validSummary).success).toBe(true);
+  });
+
+  it("allows a description and publish timestamp", () => {
+    const result = PublicFormSummarySchema.safeParse({
+      ...validSummary,
+      description: "Field form",
+      publishedAt: "2026-08-27T12:00:00.000Z"
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects a non-positive version", () => {
+    expect(
+      PublicFormSummarySchema.safeParse({ ...validSummary, version: 0 }).success
+    ).toBe(false);
+  });
+});
+
+describe("PublicFormListSchema", () => {
+  it("accepts a list of summaries", () => {
+    const result = PublicFormListSchema.safeParse({ forms: [validSummary] });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects a missing summary id", () => {
+    const { id: _omitted, ...withoutId } = validSummary;
+    expect(PublicFormListSchema.safeParse({ forms: [withoutId] }).success).toBe(
+      false
+    );
   });
 });

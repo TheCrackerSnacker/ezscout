@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
-import { sampleForm } from "./sample-form";
-import { FormView } from "./components/FormView";
 import { FormLoader } from "./components/FormLoader";
+import { PublicFormsList } from "./components/PublicFormsList";
 import { AdminPage } from "./admin/AdminPage";
 import { Link, navigate, useRoute } from "./router";
 import { OfflineIndicator } from "./offline/OfflineIndicator";
@@ -84,12 +83,7 @@ export default function App() {
         </main>
       ) : (
         <main>
-          {route.page === "home" ? (
-            <>
-              <p>Developer preview — a sample form exercising every question type.</p>
-              <FormView definition={sampleForm} />
-            </>
-          ) : null}
+          {route.page === "home" ? <PublicFormsList /> : null}
           {route.page === "form" ? (
             <FormLoader key={route.formId} formId={route.formId} />
           ) : null}
